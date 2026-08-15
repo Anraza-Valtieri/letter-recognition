@@ -250,13 +250,13 @@
   // ---------- CONFIG ----------
   const MAX_RANGE = 50; // nm
   const CHANNELS = [
-    { id:'A', letters:['A'], period:2,  color:getVar('--green'),   accuracy:0.2, weight:1.0 },
-    { id:'B', letters:['B'], period:2,  color:getVar('--green'),   accuracy:0.2, weight:1.0 },
-    { id:'a', letters:['a'], period:3,  color:getVar('--cyan'),    accuracy:0.2, weight:1.0 },
-    { id:'b', letters:['b'], period:3,  color:getVar('--cyan'),    accuracy:0.2, weight:1.0 },
-    { id:'3', letters:['3'], period:4,  color:getVar('--amber'),   accuracy:0.5, weight:0.6 },
-    { id:'4', letters:['4'], period:4,  color:getVar('--amber'),   accuracy:0.5, weight:0.6 },
-    { id:'5', letters:['5'], period:12, color:getVar('--magenta'), accuracy:0.5, weight:0.4 }
+    { id:'A', letters:['A'], period:2,  color:getVar('--green'),   accuracy:0.1, weight:1.0 },
+    { id:'B', letters:['B'], period:2,  color:getVar('--green'),   accuracy:0.1, weight:1.0 },
+    { id:'a', letters:['a'], period:3,  color:getVar('--cyan'),    accuracy:0.2, weight:0.9 },
+    { id:'b', letters:['b'], period:3,  color:getVar('--cyan'),    accuracy:0.2, weight:0.9 },
+    { id:'3', letters:['3'], period:4,  color:getVar('--amber'),   accuracy:0.5, weight:0.8 },
+    { id:'4', letters:['4'], period:4,  color:getVar('--amber'),   accuracy:0.5, weight:0.8 },
+    { id:'5', letters:['5'], period:12, color:getVar('--magenta'), accuracy:0.5, weight:0.8 }
   ];
 
   const canvas = document.getElementById('scope');
