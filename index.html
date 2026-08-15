@@ -31,7 +31,7 @@
     display:flex;
     flex-direction:column;
     align-items:center;
-    padding:20px 12px 40px;
+    padding:16px 10px 32px;
     min-height:100vh;
   }
   h1{
@@ -54,27 +54,40 @@
     gap:16px;
     flex-wrap:wrap;
     justify-content:center;
-/*     max-width:1140px; */
+    max-width:1140px;
+    width:100%;
   }
   .scope-box{
     position:relative;
     border:1px solid var(--panel-border);
     border-radius:6px;
     background:var(--scope-bg);
-    padding:10px;
+    padding:8px;
+    width:100%;
+    max-width:640px;
+    box-sizing:border-box;
   }
   canvas{
     display:block;
     border-radius:4px;
     background: var(--scope-bg);
-    max-width:100%;
-    height:auto;
+    width:100%;
+    aspect-ratio:1/1;
+    touch-action:none;
   }
   .sidebar{
     width:300px;
+    max-width:100%;
     display:flex;
     flex-direction:column;
     gap:10px;
+  }
+  @media (max-width:700px){
+    body{ padding:10px 6px 24px; }
+    h1{ font-size:13px; letter-spacing:2px; }
+    .wrap{ flex-direction:column; align-items:center; }
+    .scope-box{ max-width:480px; }
+    .sidebar{ width:100%; max-width:480px; }
   }
   .panel{
     border:1px solid var(--panel-border);
@@ -112,6 +125,11 @@
   th,td{text-align:left;padding:2px 4px;border-bottom:1px solid var(--grid-dim);}
   th{color:var(--text-dim);font-weight:600;text-transform:uppercase;font-size:9px;}
   .swatch{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;}
+  .ac-row{
+    font-size:10px; padding:4px 6px; border:1px solid var(--panel-border);
+    border-radius:4px; margin-bottom:4px; cursor:pointer; color:var(--text);
+  }
+  .ac-row:hover{ background:#0e2318; }
   .legend-line{font-size:10px;color:var(--text-dim);line-height:1.6;}
   .btnrow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;}
   .status-live{color:var(--green);}
@@ -119,8 +137,8 @@
 </style>
 </head>
 <body>
-<h1>Radar Scope Simulator</h1>
-<div class="sub">Multi-sensor plots (A/B 2s · a/b 3s · 3/4 4s · 5 12s) correlated into tracks</div>
+<h1>Letters Recognition</h1>
+<div class="sub">Multi-Letters correlated into tracks</div>
 <div class="wrap">
   <div class="scope-box">
     <canvas id="scope"></canvas>
@@ -138,13 +156,14 @@
           <option value="3">3</option>
           <option value="4">4</option>
           <option value="5">5</option>
-          <option value="6">6</option>
-          <option value="7">7</option>
-          <option value="8">8</option>
           <option value="10">10</option>
           <option value="20" selected>20</option>
           <option value="50">50</option>
+          <option value="80">80</option>
         </select>
+      </div>
+      <div class="btnrow">
+        <button id="addAcBtn">＋ Add Aircraft</button>
       </div>
       <div class="row">
         <span>Sim Speed</span>
@@ -157,8 +176,8 @@
         </select>
       </div>
       <div class="row"><span>Sim Time</span><span id="simTimeEl">0:00</span></div>
-      <div class="row"><span>Correlation gate</span><span id="gateVal">0.5nm</span></div>
-      <input type="range" id="gateSlider" min="0.05" max="1.00" step="0.05" value="0.50" style="width:100%;">
+      <div class="row"><span>Correlation gate</span><span id="gateVal">0.55nm</span></div>
+      <input type="range" id="gateSlider" min="0.05" max="3" step="0.05" value="0.55" style="width:100%;">
     </div>
 
     <div class="panel">
@@ -183,6 +202,12 @@
     </div>
 
     <div class="panel">
+      <h2>Aircraft <span style="color:var(--text-dim); font-weight:normal; text-transform:none; letter-spacing:0;">(tap to edit)</span></h2>
+      <div id="aircraftList"></div>
+      <div id="aircraftEditor"></div>
+    </div>
+
+    <div class="panel">
       <h2>Sensor Accuracy</h2>
       <div id="accuracyControls"></div>
     </div>
@@ -197,8 +222,6 @@
       <table id="channelTable"></table>
     </div>
 
-    </div>
-    <div class="sidebar">
     <div class="panel">
       <h2>Tracks</h2>
       <table>
@@ -208,13 +231,13 @@
     </div>
 
     <div class="panel">
-      <div class="legend-line">△ pale = actual aircraft position (ground truth, toggle-able)</div>
+      <div class="legend-line">△ pale = actual aircraft position (ground truth) — click/tap to edit</div>
       <div class="legend-line">○ letter = raw plot; the letter only IDs the sensor channel, not the aircraft</div>
       <div class="legend-line">□ white = fused track, built by matching plots to a coasted position</div>
       <div class="legend-line">— line = 60s velocity projection · thin colored lines = plots just fused into that track</div>
       <div class="legend-line">TENT = 1 plot, no velocity yet · FIRM = 2+ plots · COAST = no recent hits, dropped after 5s coasting</div>
+      <div class="legend-line">Track label solid underline = built from A/B/a/b only · dotted = from 3/4/5 only · no underline = mix of both</div>
     </div>
-  </div>
   </div>
 </div>
 
@@ -227,30 +250,34 @@
   // ---------- CONFIG ----------
   const MAX_RANGE = 50; // nm
   const CHANNELS = [
-    { id:'A', letters:['A'], period:2,  color:getVar('--green'),   accuracy:0.1, weight:1.0 },
-    { id:'B', letters:['B'], period:2,  color:getVar('--green'),   accuracy:0.1, weight:1.0 },
-    { id:'a', letters:['a'], period:3,  color:getVar('--cyan'),    accuracy:0.25, weight:1.0 },
-    { id:'b', letters:['b'], period:3,  color:getVar('--cyan'),    accuracy:0.25, weight:1.0 },
-    { id:'3', letters:['3'], period:4,  color:getVar('--amber'),   accuracy:0.45, weight:0.6 },
-    { id:'4', letters:['4'], period:4,  color:getVar('--amber'),   accuracy:0.45, weight:0.6 },
-    { id:'5',  letters:['5'],     period:12, color:getVar('--magenta'), accuracy:0.45, weight:0.4 },
+    { id:'A', letters:['A'], period:2,  color:getVar('--green'),   accuracy:0.2, weight:1.0 },
+    { id:'B', letters:['B'], period:2,  color:getVar('--green'),   accuracy:0.2, weight:1.0 },
+    { id:'a', letters:['a'], period:3,  color:getVar('--cyan'),    accuracy:0.2, weight:1.0 },
+    { id:'b', letters:['b'], period:3,  color:getVar('--cyan'),    accuracy:0.2, weight:1.0 },
+    { id:'3', letters:['3'], period:4,  color:getVar('--amber'),   accuracy:0.5, weight:0.6 },
+    { id:'4', letters:['4'], period:4,  color:getVar('--amber'),   accuracy:0.5, weight:0.6 },
+    { id:'5', letters:['5'], period:12, color:getVar('--magenta'), accuracy:0.5, weight:0.4 }
   ];
 
   const canvas = document.getElementById('scope');
   const ctx = canvas.getContext('2d');
-  const SIZE = 720;
   const DPR = Math.min(window.devicePixelRatio||1, 2);
-  canvas.width = SIZE*DPR; canvas.height = SIZE*DPR;
-  canvas.style.width = SIZE+'px'; canvas.style.height = SIZE+'px';
-  ctx.scale(DPR,DPR);
-  const CX = SIZE/2, CY = SIZE/2, RPX = SIZE/2 - 40;
+  let SIZE = 720, CX = 360, CY = 360, RPX = 330;
+
+  function resizeCanvas(){
+    const cssWidth = Math.round(canvas.getBoundingClientRect().width) || 720;
+    SIZE = cssWidth;
+    CX = SIZE/2; CY = SIZE/2; RPX = SIZE/2 - 26;
+    canvas.width = SIZE*DPR; canvas.height = SIZE*DPR;
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+    updatePxPerNm();
+  }
 
   // ---------- VIEW (zoom / pan) ----------
-  const BASE_PX_PER_NM = RPX / 50; // reference scale at zoom=1
   let zoom = 1;
   let viewCenter = { x:0, y:0 }; // world nm coords currently at screen center
-  let pxPerNm = BASE_PX_PER_NM;
-  function updatePxPerNm(){ pxPerNm = BASE_PX_PER_NM * zoom; }
+  let pxPerNm = 1;
+  function updatePxPerNm(){ pxPerNm = (RPX/50) * zoom; }
   function clampZoom(z){ return Math.max(0.4, Math.min(12, z)); }
   function pxToWorld(px,py){
     return { x: viewCenter.x + (px-CX)/pxPerNm, y: viewCenter.y - (py-CY)/pxPerNm };
@@ -264,7 +291,9 @@
     viewCenter.y += before.y - after.y;
   }
   function resetView(){ zoom=1; viewCenter={x:0,y:0}; updatePxPerNm(); }
-  updatePxPerNm();
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+  window.addEventListener('orientationchange', resizeCanvas);
 
   function noisyOffset(accuracy){
     const ang = Math.random()*2*Math.PI;
@@ -280,20 +309,47 @@
     return [ (clientX-rect.left) * (SIZE/rect.width), (clientY-rect.top) * (SIZE/rect.height) ];
   }
 
-  let dragging = false, lastPx = null;
+  function trySelectAircraftAt(px,py){
+    let best=null, bestD=Infinity;
+    aircraft.forEach(ac=>{
+      if(ac.hidden) return;
+      if(!document.getElementById('showAircraft').checked) return;
+      const [x,y] = worldToPx(ac.x,ac.y);
+      const d = Math.hypot(px-x, py-y);
+      if(d<bestD){ bestD=d; best=ac; }
+    });
+    if(best && bestD < 16){
+      selectedAircraftId = best.id;
+    } else {
+      selectedAircraftId = null;
+    }
+    renderAircraftEditor();
+    buildAircraftList();
+  }
+
+  let dragging = false, dragStart = null, dragMoved = false, lastPx = null;
   canvas.addEventListener('mousedown', e=>{
-    dragging = true; lastPx = toCanvasPx(e.clientX, e.clientY);
+    dragging = true; dragMoved = false;
+    dragStart = toCanvasPx(e.clientX, e.clientY);
+    lastPx = dragStart;
     canvas.style.cursor = 'grabbing';
   });
   window.addEventListener('mousemove', e=>{
     if(!dragging) return;
     const [px,py] = toCanvasPx(e.clientX, e.clientY);
     const dx = px - lastPx[0], dy = py - lastPx[1];
+    if(Math.hypot(px-dragStart[0], py-dragStart[1]) > 5) dragMoved = true;
     viewCenter.x -= dx/pxPerNm;
     viewCenter.y += dy/pxPerNm;
     lastPx = [px,py];
   });
-  window.addEventListener('mouseup', ()=>{ dragging=false; canvas.style.cursor='grab'; });
+  window.addEventListener('mouseup', e=>{
+    if(dragging && !dragMoved){
+      const [px,py] = toCanvasPx(e.clientX, e.clientY);
+      trySelectAircraftAt(px,py);
+    }
+    dragging=false; canvas.style.cursor='grab';
+  });
 
   canvas.addEventListener('wheel', e=>{
     e.preventDefault();
@@ -302,13 +358,15 @@
     zoomAt(px,py,factor);
   }, { passive:false });
 
-  // touch: single-finger pan, two-finger pinch zoom
-  let touchMode = null, lastTouchPx = null, lastPinchDist = null, pinchMidPx = null;
+  // touch: single-finger pan or tap-to-select, two-finger pinch zoom
+  let touchMode = null, lastTouchPx = null, touchStartPx = null, touchMoved = false;
+  let lastPinchDist = null, pinchMidPx = null;
   function touchDist(t0,t1){ return Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY); }
   canvas.addEventListener('touchstart', e=>{
     if(e.touches.length===1){
-      touchMode='pan';
-      lastTouchPx = toCanvasPx(e.touches[0].clientX, e.touches[0].clientY);
+      touchMode='pan'; touchMoved=false;
+      touchStartPx = toCanvasPx(e.touches[0].clientX, e.touches[0].clientY);
+      lastTouchPx = touchStartPx;
     } else if(e.touches.length===2){
       touchMode='pinch';
       lastPinchDist = touchDist(e.touches[0], e.touches[1]);
@@ -322,6 +380,7 @@
     if(touchMode==='pan' && e.touches.length===1){
       const [px,py] = toCanvasPx(e.touches[0].clientX, e.touches[0].clientY);
       const dx = px - lastTouchPx[0], dy = py - lastTouchPx[1];
+      if(Math.hypot(px-touchStartPx[0], py-touchStartPx[1]) > 8) touchMoved = true;
       viewCenter.x -= dx/pxPerNm;
       viewCenter.y += dy/pxPerNm;
       lastTouchPx = [px,py];
@@ -332,25 +391,34 @@
       lastPinchDist = dist;
     }
   }, { passive:false });
-  canvas.addEventListener('touchend', ()=>{ touchMode=null; });
+  canvas.addEventListener('touchend', ()=>{
+    if(touchMode==='pan' && !touchMoved && touchStartPx){
+      trySelectAircraftAt(touchStartPx[0], touchStartPx[1]);
+    }
+    touchMode=null;
+  });
 
   // ---------- STATE ----------
   let aircraft = [];   // hidden ground-truth movers (not directly rendered)
   let plots = [];      // flat list of raw sensor returns for rendering
   let tracks = [];      // fused/correlated tracks
   let trackIdCounter = 1;
+  let nextAircraftId = 1;
+  let selectedAircraftId = null;
   let simTime = 0;
   let running = true;
   let speedMult = 1;
   let lastTs = null;
-  let gateBase = 0.5;    // nm, tunable via slider
-  const GATE_GROWTH = 0.01;    // nm added per second since track's last update 0.6
-  const GATE_MAX = 16; // 16nm
-  const COAST_AFTER = 2;      // s since last hit -> mark COAST 5
+  let gateBase = 0.55;    // nm, tunable via slider
+  const GATE_GROWTH = 0.6;    // nm added per second since track's last update
+  const GATE_MAX = 16;
+  const COAST_AFTER = 3;      // s since last hit -> mark COAST
   const DROP_AFTER = COAST_AFTER + 5; // coasting tracks removed 5s after they start coasting
-  const FIT_WINDOW = 22;      // s of history used to fit a track's velocity (longer = smoother, slower to react) 18
-  const FIT_MAX_POINTS = 10;  // cap on stored history points per track 12
+  const FIT_WINDOW = 18;      // s of history used to fit a track's velocity (longer = smoother, slower to react)
+  const FIT_MAX_POINTS = 12;  // cap on stored history points per track
   const RECENCY_TAU = 8;      // s time-constant for down-weighting older hits within the window
+  const GROUP1 = ['A','B','a','b'];
+  const GROUP2 = ['3','4','5'];
 
   function rand(a,b){ return a + Math.random()*(b-a); }
   function normalize360(a){ a = a%360; if(a<0)a+=360; return a; }
@@ -362,19 +430,30 @@
     ac.x = r*Math.sin(brgRad);
     ac.y = r*Math.cos(brgRad);
     ac.heading = Math.random()*360;
-    ac.speedKt = rand(220,480); //220 480
+    ac.speedKt = rand(220,480);
     ac.turnRate = 0;      // deg/s, positive = turning right
     ac.turnTimer = rand(2,6);
+    ac.manualTurn = false;
     ac.vx = 0; ac.vy = 0;
+  }
+
+  function makeNewAircraft(){
+    const ac = { x:0,y:0, vx:0,vy:0, id: nextAircraftId++, hidden:false,
+                 detect: { A:true,B:true, a:true,b:true, '3':true, '4':true, '5':true } };
+    spawnAircraft(ac);
+    return ac;
   }
 
   function buildAircraftFleet(n){
     aircraft = [];
     for(let i=0;i<n;i++){
-      const ac = {x:0,y:0,vx:0,vy:0};
-      spawnAircraft(ac);
-      aircraft.push(ac);
+      aircraft.push(makeNewAircraft());
     }
+  }
+
+  function addAircraft(){
+    aircraft.push(makeNewAircraft());
+    buildAircraftList();
   }
 
   CHANNELS.forEach(ch=>{
@@ -388,6 +467,8 @@
     plots = [];
     tracks = [];
     trackIdCounter = 1;
+    nextAircraftId = 1;
+    selectedAircraftId = null;
     CHANNELS.forEach(ch=>{ ch.sweepAngle=0; ch.prevSweepAngle=0; ch.ptr=0; });
     buildAircraftFleet(n);
   }
@@ -412,7 +493,6 @@
   // point-to-point (alpha-beta) update: a new hit nudges the trend rather
   // than snapping the track to wherever that one noisy return landed.
   function recomputeTrackFit(tr){
-    if(tr.coasting) return;
     const hist = tr.plots;
     if(hist.length < 2){
       const p = hist[hist.length-1];
@@ -451,7 +531,6 @@
   function correlate(x,y,t,letter,ch){
     let best=null, bestDist=Infinity;
     tracks.forEach(tr=>{
-      if(tr.coasting) return;
       const dt = t - tr.t;
       const px = tr.x + tr.vx*dt, py = tr.y + tr.vy*dt;
       const d = Math.hypot(x-px, y-py);
@@ -474,12 +553,15 @@
     simTime += dt;
     aircraft.forEach(ac=>{
       // gentle autonomous turning: periodically pick a new turn rate
-      // (often zero = straight, sometimes a left or right turn)
-      ac.turnTimer -= dt;
-      if(ac.turnTimer <= 0){
-        ac.turnTimer = rand(4,12);
-        const r = Math.random();
-        ac.turnRate = r < 0.4 ? 0 : rand(-12,12); // deg/s -3,3
+      // (often zero = straight, sometimes a left or right turn) unless the
+      // aircraft's turn rate has been set manually via the editor panel
+      if(!ac.manualTurn){
+        ac.turnTimer -= dt;
+        if(ac.turnTimer <= 0){
+          ac.turnTimer = rand(4,12);
+          const r = Math.random();
+          ac.turnRate = r < 0.4 ? 0 : rand(-9,9); // deg/s
+        }
       }
       ac.heading = normalize360(ac.heading + ac.turnRate*dt);
       const hRad = ac.heading*Math.PI/180;
@@ -500,6 +582,7 @@
     aircraft.forEach(ac=>{
       const bearing = normalize360( Math.atan2(ac.x,ac.y)*180/Math.PI );
       CHANNELS.forEach(ch=>{
+        if(!ac.detect[ch.id]) return; // this sensor type can't see this aircraft
         if(sweptPast(ch.prevSweepAngle, ch.sweepAngle, bearing)){
           const letter = ch.letters[ch.ptr % ch.letters.length];
           ch.ptr++;
@@ -536,17 +619,8 @@
 
   function drawScopeBackground(){
     ctx.clearRect(0,0,SIZE,SIZE);
-    const visibleSpan = RPX/pxPerNm;
     const [ox,oy] = worldToPx(0,0); // screen position of the radar site
 
-    ctx.strokeStyle = getVar('--grid-dim');
-    const spokeLen = visibleSpan*2.2; // long enough to reach the corners of the rectangle
-    for(let a=0;a<360;a+=30){
-      const rad = a*Math.PI/180;
-      const x2 = ox + spokeLen*pxPerNm*Math.sin(rad);
-      const y2 = oy - spokeLen*pxPerNm*Math.cos(rad);
-      ctx.beginPath(); ctx.moveTo(ox,oy); ctx.lineTo(x2,y2); ctx.stroke();
-    }
     // radar site marker
     ctx.strokeStyle = getVar('--text-dim');
     ctx.lineWidth = 1.2;
@@ -597,10 +671,16 @@
     if(!document.getElementById('showAircraft').checked) return;
     ctx.font = '9px monospace';
     aircraft.forEach((ac,i)=>{
+      if(ac.hidden) return;
       const [x,y] = worldToPx(ac.x,ac.y);
       const [tx,ty] = headingOffsetPx(ac.heading, 9);
       const [lx,ly] = headingOffsetPx(normalize360(ac.heading+150), 6);
       const [rx,ry] = headingOffsetPx(normalize360(ac.heading-150), 6);
+      if(ac.id === selectedAircraftId){
+        ctx.strokeStyle = hexA(getVar('--amber'), 0.9);
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(x,y,13,0,Math.PI*2); ctx.stroke();
+      }
       ctx.fillStyle = hexA(getVar('--text'), 0.55);
       ctx.strokeStyle = hexA(getVar('--text'), 0.8);
       ctx.lineWidth = 1;
@@ -612,7 +692,7 @@
       ctx.fill();
       ctx.stroke();
       ctx.fillStyle = hexA(getVar('--text-dim'), 0.8);
-      ctx.fillText('AC'+(i+1), x+11, y+3);
+      ctx.fillText('AC'+ac.id, x+11, y+3);
     });
   }
 
@@ -633,6 +713,29 @@
     });
     ctx.textAlign='left';
     ctx.textBaseline='alphabetic';
+  }
+
+  function trackUnderlineStyle(tr){
+    const g1 = tr.plots.some(p => GROUP1.includes(p.letter));
+    const g2 = tr.plots.some(p => GROUP2.includes(p.letter));
+    if(g1 && !g2) return 'solid';
+    if(g2 && !g1) return 'dotted';
+    return 'none';
+  }
+
+  function drawLabelUnderline(text, x, y, style){
+    if(style==='none') return;
+    const w = ctx.measureText(text).width;
+    const uy = y+3;
+    ctx.save();
+    ctx.beginPath();
+    ctx.setLineDash(style==='dotted' ? [2,2] : []);
+    ctx.moveTo(x, uy);
+    ctx.lineTo(x+w, uy);
+    ctx.strokeStyle = ctx.fillStyle;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
   }
 
   function drawTracks(){
@@ -663,11 +766,13 @@
       ctx.lineWidth=1.3;
       ctx.strokeRect(x-5,y-5,10,10);
 
-      if(tr.hits>=1){//2
+      if(tr.hits>=2){
         ctx.fillStyle = coasting ? hexA(getVar('--white'),0.6) : getVar('--white');
         ctx.font='10px monospace';
         const gs = Math.hypot(tr.vx,tr.vy)*3600;
-        ctx.fillText(tr.id+' '+Math.round(gs)+'kt', x+8, y+4);
+        const label = tr.id+' '+Math.round(gs)+'kt';
+        ctx.fillText(label, x+8, y+4);
+        drawLabelUnderline(label, x+8, y+4, trackUnderlineStyle(tr));
         if(showVector){
           const leadSec=60;
           const [x2,y2] = worldToPx(cx+tr.vx*leadSec, cy+tr.vy*leadSec);
@@ -678,7 +783,9 @@
       } else {
         ctx.fillStyle = getVar('--amber');
         ctx.font='9px monospace';
-        ctx.fillText(tr.id+' TENT', x+8, y+4);
+        const label = tr.id+' TENT';
+        ctx.fillText(label, x+8, y+4);
+        drawLabelUnderline(label, x+8, y+4, trackUnderlineStyle(tr));
       }
 
       if(coasting){
@@ -693,6 +800,79 @@
   }
 
   // ---------- UI ----------
+  function buildAircraftList(){
+    const container = document.getElementById('aircraftList');
+    if(aircraft.length===0){ container.innerHTML = '<div class="legend-line">no aircraft — add one below</div>'; return; }
+    let html = '';
+    aircraft.forEach(ac=>{
+      const sel = ac.id===selectedAircraftId ? 'style="color:var(--amber);border-color:var(--amber);"' : '';
+      html += `<div class="ac-row" data-id="${ac.id}" ${sel}>AC${ac.id} · ${Math.round(ac.heading)}° · ${Math.round(ac.speedKt)}kt${ac.hidden?' · hidden':''}</div>`;
+    });
+    container.innerHTML = html;
+    container.querySelectorAll('.ac-row').forEach(row=>{
+      row.addEventListener('click', ()=>{
+        selectedAircraftId = parseInt(row.dataset.id,10);
+        renderAircraftEditor();
+        buildAircraftList();
+      });
+    });
+  }
+
+  function renderAircraftEditor(){
+    const container = document.getElementById('aircraftEditor');
+    const ac = aircraft.find(a=>a.id===selectedAircraftId);
+    if(!ac){ container.innerHTML=''; return; }
+    container.innerHTML = `
+      <div class="row" style="margin-top:8px;"><strong>AC${ac.id} settings</strong><button id="closeEditorBtn">✕</button></div>
+      <div class="row"><span>Speed</span><span id="acSpeedVal">${Math.round(ac.speedKt)}kt</span></div>
+      <input type="range" id="acSpeedSlider" min="100" max="600" step="5" value="${ac.speedKt}" style="width:100%;margin-bottom:6px;">
+      <div class="row"><span>Heading</span><span id="acHeadingVal">${Math.round(ac.heading)}°</span></div>
+      <input type="range" id="acHeadingSlider" min="0" max="359" step="1" value="${ac.heading}" style="width:100%;margin-bottom:6px;">
+      <div class="row"><span>Turn rate</span><span id="acTurnVal">${ac.turnRate.toFixed(1)}°/s</span></div>
+      <input type="range" id="acTurnSlider" min="-9" max="9" step="0.1" value="${ac.turnRate}" style="width:100%;margin-bottom:6px;">
+      <label class="toggle"><input type="checkbox" id="acAutoTurn" ${ac.manualTurn?'':'checked'}> Auto-turn (random maneuvers)</label>
+      <div class="legend-line" style="margin:8px 0 4px;">Detected by:</div>
+      ${CHANNELS.map(ch=>`<label class="toggle"><input type="checkbox" class="acDetectCb" data-ch="${ch.id}" ${ac.detect[ch.id]?'checked':''}><span class="swatch" style="background:${ch.color}"></span>${ch.letters.join('/')}</label>`).join('')}
+      <div class="btnrow" style="margin-top:10px;">
+        <button id="acHideBtn">${ac.hidden?'👁 Show':'🚫 Hide'}</button>
+        <button id="acDeleteBtn">🗑 Delete</button>
+      </div>`;
+    document.getElementById('acSpeedSlider').addEventListener('input', e=>{
+      ac.speedKt = parseFloat(e.target.value);
+      document.getElementById('acSpeedVal').textContent = Math.round(ac.speedKt)+'kt';
+    });
+    document.getElementById('acHeadingSlider').addEventListener('input', e=>{
+      ac.heading = parseFloat(e.target.value);
+      document.getElementById('acHeadingVal').textContent = Math.round(ac.heading)+'°';
+    });
+    document.getElementById('acTurnSlider').addEventListener('input', e=>{
+      ac.turnRate = parseFloat(e.target.value);
+      ac.manualTurn = true;
+      document.getElementById('acTurnVal').textContent = ac.turnRate.toFixed(1)+'°/s';
+      document.getElementById('acAutoTurn').checked = false;
+    });
+    document.getElementById('acAutoTurn').addEventListener('change', e=>{
+      ac.manualTurn = !e.target.checked;
+    });
+    container.querySelectorAll('.acDetectCb').forEach(cb=>{
+      cb.addEventListener('change', e=>{ ac.detect[e.target.dataset.ch] = e.target.checked; });
+    });
+    document.getElementById('acHideBtn').addEventListener('click', ()=>{
+      ac.hidden = !ac.hidden;
+      renderAircraftEditor(); buildAircraftList();
+    });
+    document.getElementById('acDeleteBtn').addEventListener('click', ()=>{
+      aircraft = aircraft.filter(a=>a.id!==ac.id);
+      selectedAircraftId = null;
+      renderAircraftEditor(); buildAircraftList();
+    });
+    document.getElementById('closeEditorBtn').addEventListener('click', ()=>{
+      selectedAircraftId = null;
+      renderAircraftEditor();
+      buildAircraftList();
+    });
+  }
+
   function buildChannelTable(){
     const tbl = document.getElementById('channelTable');
     let html = '<thead><tr><th></th><th>Letters</th><th>Period</th><th>Acc</th><th>Wt</th></tr></thead><tbody>';
@@ -783,28 +963,32 @@
   });
   document.getElementById('resetBtn').addEventListener('click', ()=>{
     resetScenario(parseInt(document.getElementById('acSel').value,10));
+    buildAircraftList(); renderAircraftEditor();
   });
   document.getElementById('acSel').addEventListener('change', (e)=>{
     resetScenario(parseInt(e.target.value,10));
+    buildAircraftList(); renderAircraftEditor();
   });
   document.getElementById('speedSel').addEventListener('change', (e)=>{
     speedMult = parseFloat(e.target.value);
   });
   document.getElementById('gateSlider').addEventListener('input', (e)=>{
     gateBase = parseFloat(e.target.value);
-    document.getElementById('gateVal').textContent = gateBase+'nm';// gateBase.toFixed(1)+'nm';
+    document.getElementById('gateVal').textContent = gateBase+'nm';
   });
   document.getElementById('zoomInBtn').addEventListener('click', ()=> zoomAt(CX,CY,1.4));
   document.getElementById('zoomOutBtn').addEventListener('click', ()=> zoomAt(CX,CY,1/1.4));
   document.getElementById('viewResetBtn').addEventListener('click', resetView);
+  document.getElementById('addAcBtn').addEventListener('click', addAircraft);
 
   buildChannelTable();
   buildAccuracyControls();
   buildWeightControls();
   resetScenario(parseInt(document.getElementById('acSel').value,10));
+  buildAircraftList();
 
   // ---------- LOOP ----------
-  let tableTimer=0;
+  let tableTimer=0, acListTimer=0;
   function frame(ts){
     if(lastTs===null) lastTs=ts;
     let dt = (ts-lastTs)/1000;
@@ -834,6 +1018,11 @@
       updateTrackTable();
       document.getElementById('simTimeEl').textContent = formatTime(simTime);
       document.getElementById('zoomVal').textContent = zoom.toFixed(1)+'×';
+    }
+    acListTimer += dt;
+    if(acListTimer>1){
+      acListTimer=0;
+      buildAircraftList();
     }
     requestAnimationFrame(frame);
   }
