@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Radar Scope Simulator</title>
+<style>
+  :root{
+    --bg:#04070a;
+    --panel:#0a1410;
+    --panel-border:#1c3b2e;
+    --scope-bg:#020805;
+    --grid:#12351f;
+    --grid-dim:#0a2015;
+    --text:#8fe3b0;
+    --text-dim:#4d8267;
+    --amber:#ffb23a;
+    --green:#39ff6a;
+    --cyan:#3ac8ff;
+    --magenta:#ff5ac8;
+    --white:#eafff2;
+    --truth:#7fa3d6;
+    --red:#ff3b3b;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:'Courier New', ui-monospace, monospace;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding:20px 12px 40px;
+    min-height:100vh;
+  }
+  h1{
+    font-size:15px;
+    letter-spacing:3px;
+    color:var(--white);
+    text-transform:uppercase;
+    margin:0 0 4px;
+    font-weight:600;
+  }
+  .sub{
+    color:var(--text-dim);
+    font-size:11px;
+    letter-spacing:1px;
+    margin-bottom:16px;
+    text-align:center;
+  }
+  .wrap{
+    display:flex;
+    gap:16px;
+    flex-wrap:wrap;
+    justify-content:center;
+/*     max-width:1140px; */
+  }
+  .scope-box{
+    position:relative;
+    border:1px solid var(--panel-border);
+    border-radius:6px;
+    background:var(--scope-bg);
+    padding:10px;
+  }
+  canvas{
+    display:block;
+    border-radius:4px;
+    background: var(--scope-bg);
+    max-width:100%;
+    height:auto;
+  }
+  .sidebar{
+    width:300px;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+  .panel{
+    border:1px solid var(--panel-border);
+    background:var(--panel);
+    border-radius:6px;
+    padding:10px 12px;
+  }
+  .panel h2{
+    font-size:10px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    color:var(--text-dim);
+    margin:0 0 8px;
+  }
+  .row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;font-size:11px;}
+  button{
+    background:#0e2318;
+    border:1px solid var(--panel-border);
+    color:var(--white);
+    font-family:inherit;
+    font-size:11px;
+    letter-spacing:1px;
+    padding:6px 10px;
+    border-radius:4px;
+    cursor:pointer;
+  }
+  button:hover{background:#153021;}
+  select{
+    background:#0e2318;border:1px solid var(--panel-border);color:var(--white);
+    font-family:inherit;font-size:11px;padding:4px 6px;border-radius:4px;
+  }
+  label.toggle{display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;margin-bottom:4px;}
+  input[type=checkbox]{accent-color: var(--green);}
+  table{width:100%;border-collapse:collapse;font-size:10px;}
+  th,td{text-align:left;padding:2px 4px;border-bottom:1px solid var(--grid-dim);}
+  th{color:var(--text-dim);font-weight:600;text-transform:uppercase;font-size:9px;}
+  .swatch{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;}
+  .legend-line{font-size:10px;color:var(--text-dim);line-height:1.6;}
+  .btnrow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;}
+  .status-live{color:var(--green);}
+  .status-acq{color:var(--amber);}
+</style>
+</head>
+<body>
+<h1>Radar Scope Simulator</h1>
+<div class="sub">Multi-sensor plots (A/B 2s · a/b 3s · 3/4 4s · 5 12s) correlated into tracks</div>
+<div class="wrap">
+  <div class="scope-box">
+    <canvas id="scope"></canvas>
+  </div>
+  <div class="sidebar">
+    <div class="panel">
+      <h2>Simulation</h2>
+      <div class="btnrow">
+        <button id="playBtn">⏸ Pause</button>
+        <button id="resetBtn">↺ New Scenario</button>
+      </div>
+      <div class="row">
+        <span>Aircraft</span>
+        <select id="acSel">
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+          <option value="6">6</option>
+          <option value="7">7</option>
+          <option value="8">8</option>
+          <option value="10">10</option>
+          <option value="20" selected>20</option>
+          <option value="50">50</option>
+        </select>
+      </div>
+      <div class="row">
+        <span>Sim Speed</span>
+        <select id="speedSel">
+          <option value="0.5">0.5×</option>
+          <option value="1" selected>1×</option>
+          <option value="2">2×</option>
+          <option value="4">4×</option>
+          <option value="8">8×</option>
+        </select>
+      </div>
+      <div class="row"><span>Sim Time</span><span id="simTimeEl">0:00</span></div>
+      <div class="row"><span>Correlation gate</span><span id="gateVal">0.5nm</span></div>
+      <input type="range" id="gateSlider" min="0.05" max="1.00" step="0.05" value="0.50" style="width:100%;">
+    </div>
+
+    <div class="panel">
+      <h2>View</h2>
+      <div class="btnrow">
+        <button id="zoomInBtn">＋ Zoom In</button>
+        <button id="zoomOutBtn">－ Zoom Out</button>
+        <button id="viewResetBtn">⤢ Reset View</button>
+      </div>
+      <div class="row"><span>Zoom</span><span id="zoomVal">1.0×</span></div>
+      <div class="legend-line">Scroll / pinch to zoom, click-drag or one-finger drag to pan.</div>
+    </div>
+
+    <div class="panel">
+      <h2>Display</h2>
+      <label class="toggle"><input type="checkbox" id="showAircraft" checked> Show aircraft (ground truth)</label>
+      <label class="toggle"><input type="checkbox" id="showPlots" checked> Show plots (raw returns)</label>
+      <label class="toggle"><input type="checkbox" id="showTracks" checked> Show tracks (correlated)</label>
+      <label class="toggle"><input type="checkbox" id="showVector" checked> Show velocity vectors</label>
+      <label class="toggle"><input type="checkbox" id="showAssoc" checked> Show plot→track association lines</label>
+      <label class="toggle"><input type="checkbox" id="showSweep"> Show sensor sweeps</label>
+    </div>
+
+    <div class="panel">
+      <h2>Sensor Accuracy</h2>
+      <div id="accuracyControls"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Sensor Weight (track trust)</h2>
+      <div id="weightControls"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Sensor Channels</h2>
+      <table id="channelTable"></table>
+    </div>
+
+    </div>
+    <div class="sidebar">
+    <div class="panel">
+      <h2>Tracks</h2>
+      <table>
+        <thead><tr><th>ID</th><th>Rng</th><th>Brg</th><th>GS</th><th>Hits</th><th>Sta</th></tr></thead>
+        <tbody id="trackBody"></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <div class="legend-line">△ pale = actual aircraft position (ground truth, toggle-able)</div>
+      <div class="legend-line">○ letter = raw plot; the letter only IDs the sensor channel, not the aircraft</div>
+      <div class="legend-line">□ white = fused track, built by matching plots to a coasted position</div>
+      <div class="legend-line">— line = 60s velocity projection · thin colored lines = plots just fused into that track</div>
+      <div class="legend-line">TENT = 1 plot, no velocity yet · FIRM = 2+ plots · COAST = no recent hits, dropped after 5s coasting</div>
+    </div>
+  </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  function getVar(name){
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  // ---------- CONFIG ----------
+  const MAX_RANGE = 50; // nm
+  const CHANNELS = [
+    { id:'A', letters:['A'], period:2,  color:getVar('--green'),   accuracy:0.1, weight:1.0 },
+    { id:'B', letters:['B'], period:2,  color:getVar('--green'),   accuracy:0.1, weight:1.0 },
+    { id:'a', letters:['a'], period:3,  color:getVar('--cyan'),    accuracy:0.25, weight:1.0 },
+    { id:'b', letters:['b'], period:3,  color:getVar('--cyan'),    accuracy:0.25, weight:1.0 },
+    { id:'3', letters:['3'], period:4,  color:getVar('--amber'),   accuracy:0.45, weight:0.6 },
+    { id:'4', letters:['4'], period:4,  color:getVar('--amber'),   accuracy:0.45, weight:0.6 },
+    { id:'5',  letters:['5'],     period:12, color:getVar('--magenta'), accuracy:0.45, weight:0.4 },
+  ];
+
+  const canvas = document.getElementById('scope');
+  const ctx = canvas.getContext('2d');
+  const SIZE = 720;
+  const DPR = Math.min(window.devicePixelRatio||1, 2);
+  canvas.width = SIZE*DPR; canvas.height = SIZE*DPR;
+  canvas.style.width = SIZE+'px'; canvas.style.height = SIZE+'px';
+  ctx.scale(DPR,DPR);
+  const CX = SIZE/2, CY = SIZE/2, RPX = SIZE/2 - 40;
+
+  // ---------- VIEW (zoom / pan) ----------
+  const BASE_PX_PER_NM = RPX / 50; // reference scale at zoom=1
+  let zoom = 1;
+  let viewCenter = { x:0, y:0 }; // world nm coords currently at screen center
+  let pxPerNm = BASE_PX_PER_NM;
+  function updatePxPerNm(){ pxPerNm = BASE_PX_PER_NM * zoom; }
+  function clampZoom(z){ return Math.max(0.4, Math.min(12, z)); }
+  function pxToWorld(px,py){
+    return { x: viewCenter.x + (px-CX)/pxPerNm, y: viewCenter.y - (py-CY)/pxPerNm };
+  }
+  function zoomAt(px,py,factor){
+    const before = pxToWorld(px,py);
+    zoom = clampZoom(zoom*factor);
+    updatePxPerNm();
+    const after = pxToWorld(px,py);
+    viewCenter.x += before.x - after.x;
+    viewCenter.y += before.y - after.y;
+  }
+  function resetView(){ zoom=1; viewCenter={x:0,y:0}; updatePxPerNm(); }
+  updatePxPerNm();
+
+  function noisyOffset(accuracy){
+    const ang = Math.random()*2*Math.PI;
+    const r = accuracy*Math.sqrt(Math.random()); // uniform over disk area
+    return [ r*Math.sin(ang), r*Math.cos(ang) ];
+  }
+
+  // ---------- POINTER / TOUCH INTERACTION ----------
+  canvas.style.cursor = 'grab';
+  canvas.style.touchAction = 'none';
+  function toCanvasPx(clientX, clientY){
+    const rect = canvas.getBoundingClientRect();
+    return [ (clientX-rect.left) * (SIZE/rect.width), (clientY-rect.top) * (SIZE/rect.height) ];
+  }
+
+  let dragging = false, lastPx = null;
+  canvas.addEventListener('mousedown', e=>{
+    dragging = true; lastPx = toCanvasPx(e.clientX, e.clientY);
+    canvas.style.cursor = 'grabbing';
+  });
+  window.addEventListener('mousemove', e=>{
+    if(!dragging) return;
+    const [px,py] = toCanvasPx(e.clientX, e.clientY);
+    const dx = px - lastPx[0], dy = py - lastPx[1];
+    viewCenter.x -= dx/pxPerNm;
+    viewCenter.y += dy/pxPerNm;
+    lastPx = [px,py];
+  });
+  window.addEventListener('mouseup', ()=>{ dragging=false; canvas.style.cursor='grab'; });
+
+  canvas.addEventListener('wheel', e=>{
+    e.preventDefault();
+    const [px,py] = toCanvasPx(e.clientX, e.clientY);
+    const factor = e.deltaY < 0 ? 1.15 : 1/1.15;
+    zoomAt(px,py,factor);
+  }, { passive:false });
+
+  // touch: single-finger pan, two-finger pinch zoom
+  let touchMode = null, lastTouchPx = null, lastPinchDist = null, pinchMidPx = null;
+  function touchDist(t0,t1){ return Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY); }
+  canvas.addEventListener('touchstart', e=>{
+    if(e.touches.length===1){
+      touchMode='pan';
+      lastTouchPx = toCanvasPx(e.touches[0].clientX, e.touches[0].clientY);
+    } else if(e.touches.length===2){
+      touchMode='pinch';
+      lastPinchDist = touchDist(e.touches[0], e.touches[1]);
+      const mx = (e.touches[0].clientX+e.touches[1].clientX)/2;
+      const my = (e.touches[0].clientY+e.touches[1].clientY)/2;
+      pinchMidPx = toCanvasPx(mx,my);
+    }
+  }, { passive:true });
+  canvas.addEventListener('touchmove', e=>{
+    e.preventDefault();
+    if(touchMode==='pan' && e.touches.length===1){
+      const [px,py] = toCanvasPx(e.touches[0].clientX, e.touches[0].clientY);
+      const dx = px - lastTouchPx[0], dy = py - lastTouchPx[1];
+      viewCenter.x -= dx/pxPerNm;
+      viewCenter.y += dy/pxPerNm;
+      lastTouchPx = [px,py];
+    } else if(touchMode==='pinch' && e.touches.length===2){
+      const dist = touchDist(e.touches[0], e.touches[1]);
+      const factor = dist/lastPinchDist;
+      zoomAt(pinchMidPx[0], pinchMidPx[1], factor);
+      lastPinchDist = dist;
+    }
+  }, { passive:false });
+  canvas.addEventListener('touchend', ()=>{ touchMode=null; });
+
+  // ---------- STATE ----------
+  let aircraft = [];   // hidden ground-truth movers (not directly rendered)
+  let plots = [];      // flat list of raw sensor returns for rendering
+  let tracks = [];      // fused/correlated tracks
+  let trackIdCounter = 1;
+  let simTime = 0;
+  let running = true;
+  let speedMult = 1;
+  let lastTs = null;
+  let gateBase = 0.5;    // nm, tunable via slider
+  const GATE_GROWTH = 0.01;    // nm added per second since track's last update 0.6
+  const GATE_MAX = 16; // 16nm
+  const COAST_AFTER = 2;      // s since last hit -> mark COAST 5
+  const DROP_AFTER = COAST_AFTER + 5; // coasting tracks removed 5s after they start coasting
+  const FIT_WINDOW = 22;      // s of history used to fit a track's velocity (longer = smoother, slower to react) 18
+  const FIT_MAX_POINTS = 10;  // cap on stored history points per track 12
+  const RECENCY_TAU = 8;      // s time-constant for down-weighting older hits within the window
+
+  function rand(a,b){ return a + Math.random()*(b-a); }
+  function normalize360(a){ a = a%360; if(a<0)a+=360; return a; }
+
+  function spawnAircraft(ac){
+    const r = MAX_RANGE * (0.15 + Math.random()*0.75);
+    const brg = Math.random()*360;
+    const brgRad = brg*Math.PI/180;
+    ac.x = r*Math.sin(brgRad);
+    ac.y = r*Math.cos(brgRad);
+    ac.heading = Math.random()*360;
+    ac.speedKt = rand(220,480); //220 480
+    ac.turnRate = 0;      // deg/s, positive = turning right
+    ac.turnTimer = rand(2,6);
+    ac.vx = 0; ac.vy = 0;
+  }
+
+  function buildAircraftFleet(n){
+    aircraft = [];
+    for(let i=0;i<n;i++){
+      const ac = {x:0,y:0,vx:0,vy:0};
+      spawnAircraft(ac);
+      aircraft.push(ac);
+    }
+  }
+
+  CHANNELS.forEach(ch=>{
+    ch.sweepAngle = 0;
+    ch.prevSweepAngle = 0;
+    ch.ptr = 0; // round-robin pointer into ch.letters for tagging simultaneous returns
+  });
+
+  function resetScenario(n){
+    simTime = 0;
+    plots = [];
+    tracks = [];
+    trackIdCounter = 1;
+    CHANNELS.forEach(ch=>{ ch.sweepAngle=0; ch.prevSweepAngle=0; ch.ptr=0; });
+    buildAircraftFleet(n);
+  }
+
+  // ---------- UPDATE ----------
+  function sweptPast(prev,curr,bearing){
+    const p = normalize360(prev);
+    const c = normalize360(curr);
+    let delta = c-p; if(delta<0) delta+=360;
+    if(delta>350) delta=350;
+    let rel = normalize360(bearing-p);
+    return rel <= delta;
+  }
+
+  function newTrack(x,y,t,letter,color,weight){
+    return { id:'T'+(trackIdCounter++), x, y, vx:0, vy:0, t, hits:1,
+             lastHitT:t, plots:[{x,y,t,letter,color,weight}] };
+  }
+
+  // Weighted least-squares fit of position/velocity over a rolling window of
+  // recent plots. This is far more resistant to single-hit noise than a
+  // point-to-point (alpha-beta) update: a new hit nudges the trend rather
+  // than snapping the track to wherever that one noisy return landed.
+  function recomputeTrackFit(tr){
+    if(tr.coasting) return;
+    const hist = tr.plots;
+    if(hist.length < 2){
+      const p = hist[hist.length-1];
+      tr.x=p.x; tr.y=p.y; tr.vx=0; tr.vy=0; tr.t=p.t;
+      return;
+    }
+    const latestT = hist[hist.length-1].t;
+    let sw=0, swt=0, swx=0, swy=0;
+    hist.forEach(p=>{
+      const age = latestT - p.t;
+      const w = (p.weight||1) * Math.exp(-age/RECENCY_TAU);
+      sw+=w; swt+=w*p.t; swx+=w*p.x; swy+=w*p.y;
+    });
+    if(sw < 1e-6){ return; }
+    const tMean = swt/sw, xMean = swx/sw, yMean = swy/sw;
+    let sxt=0, syt=0, stt=0;
+    hist.forEach(p=>{
+      const age = latestT - p.t;
+      const w = (p.weight||1) * Math.exp(-age/RECENCY_TAU);
+      const dt = p.t - tMean;
+      sxt += w*dt*(p.x-xMean);
+      syt += w*dt*(p.y-yMean);
+      stt += w*dt*dt;
+    });
+    const vx = stt > 1e-6 ? sxt/stt : 0;
+    const vy = stt > 1e-6 ? syt/stt : 0;
+    tr.vx = vx; tr.vy = vy;
+    tr.x = xMean + vx*(latestT - tMean);
+    tr.y = yMean + vy*(latestT - tMean);
+    tr.t = latestT;
+  }
+
+  // Nearest-neighbor correlation: match a raw plot to the closest coasted
+  // track within a distance gate that grows with time-since-last-update
+  // (more uncertainty the longer a track has gone unconfirmed).
+  function correlate(x,y,t,letter,ch){
+    let best=null, bestDist=Infinity;
+    tracks.forEach(tr=>{
+      if(tr.coasting) return;
+      const dt = t - tr.t;
+      const px = tr.x + tr.vx*dt, py = tr.y + tr.vy*dt;
+      const d = Math.hypot(x-px, y-py);
+      const gate = Math.min(gateBase + dt*GATE_GROWTH, GATE_MAX);
+      if(d < gate && d < bestDist){ bestDist=d; best=tr; }
+    });
+    if(best){
+      best.lastHitT = t;
+      best.hits++;
+      best.plots.push({x,y,t,letter,color:ch.color,weight:ch.weight});
+      best.plots = best.plots.filter(p => t - p.t <= FIT_WINDOW);
+      if(best.plots.length > FIT_MAX_POINTS) best.plots.shift();
+      recomputeTrackFit(best);
+    } else {
+      tracks.push(newTrack(x,y,t,letter,ch.color,ch.weight));
+    }
+  }
+
+  function step(dt){
+    simTime += dt;
+    aircraft.forEach(ac=>{
+      // gentle autonomous turning: periodically pick a new turn rate
+      // (often zero = straight, sometimes a left or right turn)
+      ac.turnTimer -= dt;
+      if(ac.turnTimer <= 0){
+        ac.turnTimer = rand(4,12);
+        const r = Math.random();
+        ac.turnRate = r < 0.4 ? 0 : rand(-12,12); // deg/s -3,3
+      }
+      ac.heading = normalize360(ac.heading + ac.turnRate*dt);
+      const hRad = ac.heading*Math.PI/180;
+      const spdNmS = ac.speedKt/3600;
+      ac.vx = spdNmS*Math.sin(hRad);
+      ac.vy = spdNmS*Math.cos(hRad);
+      ac.x += ac.vx*dt;
+      ac.y += ac.vy*dt;
+      const range = Math.hypot(ac.x,ac.y);
+      if(range > MAX_RANGE*1.08){ spawnAircraft(ac); }
+    });
+
+    CHANNELS.forEach(ch=>{
+      ch.prevSweepAngle = ch.sweepAngle;
+      ch.sweepAngle = normalize360( (simTime/ch.period) * 360 );
+    });
+
+    aircraft.forEach(ac=>{
+      const bearing = normalize360( Math.atan2(ac.x,ac.y)*180/Math.PI );
+      CHANNELS.forEach(ch=>{
+        if(sweptPast(ch.prevSweepAngle, ch.sweepAngle, bearing)){
+          const letter = ch.letters[ch.ptr % ch.letters.length];
+          ch.ptr++;
+          const [ox,oy] = noisyOffset(ch.accuracy);
+          const mx = ac.x + ox, my = ac.y + oy; // measured (noisy) position
+          plots.push({x:mx,y:my,t:simTime,letter,color:ch.color});
+          correlate(mx, my, simTime, letter, ch);
+        }
+      });
+    });
+
+    // prune old raw plots
+    plots = plots.filter(p => simTime - p.t < 20);
+    // drop stale tracks that haven't been updated in a long time
+    tracks = tracks.filter(tr => simTime - tr.lastHitT < DROP_AFTER);
+  }
+
+  // ---------- DRAW ----------
+  function worldToPx(x,y){
+    return [ CX + (x - viewCenter.x)*pxPerNm, CY - (y - viewCenter.y)*pxPerNm ];
+  }
+  function bearingToPx(brgDeg, rangeNm){
+    const rad = brgDeg*Math.PI/180;
+    const x = rangeNm*Math.sin(rad), y = rangeNm*Math.cos(rad);
+    return worldToPx(x,y);
+  }
+  function hexA(hex, alpha){
+    const h = hex.replace('#','');
+    const r = parseInt(h.substring(0,2),16);
+    const g = parseInt(h.substring(2,4),16);
+    const b = parseInt(h.substring(4,6),16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+
+  function drawScopeBackground(){
+    ctx.clearRect(0,0,SIZE,SIZE);
+    const visibleSpan = RPX/pxPerNm;
+    const [ox,oy] = worldToPx(0,0); // screen position of the radar site
+
+    ctx.strokeStyle = getVar('--grid-dim');
+    const spokeLen = visibleSpan*2.2; // long enough to reach the corners of the rectangle
+    for(let a=0;a<360;a+=30){
+      const rad = a*Math.PI/180;
+      const x2 = ox + spokeLen*pxPerNm*Math.sin(rad);
+      const y2 = oy - spokeLen*pxPerNm*Math.cos(rad);
+      ctx.beginPath(); ctx.moveTo(ox,oy); ctx.lineTo(x2,y2); ctx.stroke();
+    }
+    // radar site marker
+    ctx.strokeStyle = getVar('--text-dim');
+    ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(ox-6,oy); ctx.lineTo(ox+6,oy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(ox,oy-6); ctx.lineTo(ox,oy+6); ctx.stroke();
+
+    // compass labels pinned to the fixed screen edges (orientation, not position)
+    ctx.fillStyle = getVar('--text-dim');
+    ctx.font = '11px monospace';
+    ctx.textAlign='center';
+    ctx.fillText('N', CX, 16);
+    ctx.fillText('S', CX, SIZE-8);
+    ctx.fillText('E', SIZE-14, CY+4);
+    ctx.fillText('W', 14, CY+4);
+    ctx.textAlign='left';
+  }
+
+  function drawSweeps(){
+    if(!document.getElementById('showSweep').checked) return;
+    const visibleSpan = (RPX/pxPerNm)*2.2;
+    CHANNELS.forEach(ch=>{
+      const ang = ch.sweepAngle;
+      const steps = 24;
+      for(let i=0;i<steps;i++){
+        const a = ang - i*1.2;
+        const alpha = Math.max(0, 0.18 - i*0.008);
+        if(alpha<=0) continue;
+        const [x1,y1]=bearingToPx(a,0);
+        const [x2,y2]=bearingToPx(a,visibleSpan);
+        ctx.strokeStyle = hexA(ch.color, alpha);
+        ctx.lineWidth=2;
+        ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+      }
+      const [x2,y2]=bearingToPx(ang,visibleSpan);
+      const [x1,y1]=bearingToPx(ang,0);
+      ctx.strokeStyle = ch.color;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    });
+  }
+
+  function headingOffsetPx(brgDeg, rpx){
+    const rad = brgDeg*Math.PI/180;
+    return [ rpx*Math.sin(rad), -rpx*Math.cos(rad) ];
+  }
+
+  function drawAircraft(){
+    if(!document.getElementById('showAircraft').checked) return;
+    ctx.font = '9px monospace';
+    aircraft.forEach((ac,i)=>{
+      const [x,y] = worldToPx(ac.x,ac.y);
+      const [tx,ty] = headingOffsetPx(ac.heading, 9);
+      const [lx,ly] = headingOffsetPx(normalize360(ac.heading+150), 6);
+      const [rx,ry] = headingOffsetPx(normalize360(ac.heading-150), 6);
+      ctx.fillStyle = hexA(getVar('--text'), 0.55);
+      ctx.strokeStyle = hexA(getVar('--text'), 0.8);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x+tx,y+ty);
+      ctx.lineTo(x+lx,y+ly);
+      ctx.lineTo(x+rx,y+ry);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = hexA(getVar('--text-dim'), 0.8);
+      ctx.fillText('AC'+(i+1), x+11, y+3);
+    });
+  }
+
+  function drawPlots(){
+    const showPlots = document.getElementById('showPlots').checked;
+    if(!showPlots) return;
+    ctx.textAlign='center';
+    ctx.textBaseline='middle';
+    plots.forEach(p=>{
+      const fadeDur = 5.5;
+      const age = simTime - p.t;
+      const alpha = Math.max(0, 1 - age/fadeDur);
+      if(alpha<=0) return;
+      const [x,y] = worldToPx(p.x,p.y);
+      ctx.fillStyle = hexA(p.color, alpha);
+      ctx.font = 'bold 14px monospace';
+      ctx.fillText(p.letter, x, y);
+    });
+    ctx.textAlign='left';
+    ctx.textBaseline='alphabetic';
+  }
+
+  function drawTracks(){
+    const showTracks = document.getElementById('showTracks').checked;
+    const showVector = document.getElementById('showVector').checked;
+    const showAssoc = document.getElementById('showAssoc').checked;
+    if(!showTracks) return;
+    tracks.forEach(tr=>{
+      const dt = simTime - tr.t;
+      const cx = tr.x + tr.vx*dt;
+      const cy = tr.y + tr.vy*dt;
+      const [x,y] = worldToPx(cx,cy);
+      const sinceHit = simTime - tr.lastHitT;
+      const coasting = sinceHit > COAST_AFTER;
+
+      if(showAssoc){
+        // thin lines from this track's recent contributing plots to the track symbol
+        const recent = tr.plots.filter(p => simTime - p.t < 4);
+        recent.forEach(p=>{
+          const [px,py] = worldToPx(p.x,p.y);
+          ctx.strokeStyle = hexA(p.color, 0.35);
+          ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(x,y); ctx.stroke();
+        });
+      }
+
+      ctx.strokeStyle = coasting ? hexA(getVar('--white'),0.5) : getVar('--white');
+      ctx.lineWidth=1.3;
+      ctx.strokeRect(x-5,y-5,10,10);
+
+      if(tr.hits>=1){//2
+        ctx.fillStyle = coasting ? hexA(getVar('--white'),0.6) : getVar('--white');
+        ctx.font='10px monospace';
+        const gs = Math.hypot(tr.vx,tr.vy)*3600;
+        ctx.fillText(tr.id+' '+Math.round(gs)+'kt', x+8, y+4);
+        if(showVector){
+          const leadSec=60;
+          const [x2,y2] = worldToPx(cx+tr.vx*leadSec, cy+tr.vy*leadSec);
+          ctx.strokeStyle = ctx.fillStyle;
+          ctx.lineWidth=1;
+          ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x2,y2); ctx.stroke();
+        }
+      } else {
+        ctx.fillStyle = getVar('--amber');
+        ctx.font='9px monospace';
+        ctx.fillText(tr.id+' TENT', x+8, y+4);
+      }
+
+      if(coasting){
+        const blinkOn = Math.floor(simTime*2)%2===0;
+        if(blinkOn){
+          ctx.fillStyle = '#ff3b3b';
+          ctx.font = 'bold 10px monospace';
+          ctx.fillText('DROP', x+8, y+16);
+        }
+      }
+    });
+  }
+
+  // ---------- UI ----------
+  function buildChannelTable(){
+    const tbl = document.getElementById('channelTable');
+    let html = '<thead><tr><th></th><th>Letters</th><th>Period</th><th>Acc</th><th>Wt</th></tr></thead><tbody>';
+    CHANNELS.forEach(ch=>{
+      html += `<tr><td><span class="swatch" style="background:${ch.color}"></span></td><td>${ch.letters.join(', ')}</td><td>${ch.period}s</td><td>±${ch.accuracy.toFixed(2)}nm</td><td>${ch.weight.toFixed(2)}×</td></tr>`;
+    });
+    html += '</tbody>';
+    tbl.innerHTML = html;
+  }
+
+  function buildAccuracyControls(){
+    const container = document.getElementById('accuracyControls');
+    container.innerHTML = '';
+    CHANNELS.forEach(ch=>{
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = `<span><span class="swatch" style="background:${ch.color}"></span>${ch.letters.join('/')}</span><span id="acc-${ch.id}-val">±${ch.accuracy.toFixed(2)}nm</span>`;
+      container.appendChild(row);
+      const slider = document.createElement('input');
+      slider.type = 'range';
+      slider.min = '0.05'; slider.max = '2'; slider.step = '0.05';
+      slider.value = ch.accuracy;
+      slider.style.width = '100%';
+      slider.style.marginBottom = '8px';
+      slider.addEventListener('input', (e)=>{
+        ch.accuracy = parseFloat(e.target.value);
+        document.getElementById(`acc-${ch.id}-val`).textContent = '±'+ch.accuracy.toFixed(2)+'nm';
+        buildChannelTable();
+      });
+      container.appendChild(slider);
+    });
+  }
+
+  function buildWeightControls(){
+    const container = document.getElementById('weightControls');
+    container.innerHTML = '';
+    CHANNELS.forEach(ch=>{
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = `<span><span class="swatch" style="background:${ch.color}"></span>${ch.letters.join('/')}</span><span id="wt-${ch.id}-val">${ch.weight.toFixed(2)}×</span>`;
+      container.appendChild(row);
+      const slider = document.createElement('input');
+      slider.type = 'range';
+      slider.min = '0'; slider.max = '2'; slider.step = '0.05';
+      slider.value = ch.weight;
+      slider.style.width = '100%';
+      slider.style.marginBottom = '8px';
+      slider.addEventListener('input', (e)=>{
+        ch.weight = parseFloat(e.target.value);
+        document.getElementById(`wt-${ch.id}-val`).textContent = ch.weight.toFixed(2)+'×';
+        buildChannelTable();
+      });
+      container.appendChild(slider);
+    });
+  }
+
+  function updateTrackTable(){
+    const body = document.getElementById('trackBody');
+    let html='';
+    // sort by range for a stable, readable listing
+    const sorted = [...tracks].sort((a,b)=> Math.hypot(a.x,a.y) - Math.hypot(b.x,b.y));
+    sorted.forEach(tr=>{
+      const dt = simTime - tr.t;
+      const cx = tr.x + tr.vx*dt, cy = tr.y + tr.vy*dt;
+      const range = Math.hypot(cx,cy).toFixed(1);
+      const brg = Math.round(normalize360(Math.atan2(cx,cy)*180/Math.PI));
+      const sinceHit = simTime - tr.lastHitT;
+      let gs='--', status;
+      if(tr.hits>=2){
+        gs = Math.round(Math.hypot(tr.vx,tr.vy)*3600);
+        status = sinceHit>COAST_AFTER ? '<span class="status-acq">COAST</span>' : '<span class="status-live">FIRM</span>';
+      } else {
+        status = '<span class="status-acq">TENT</span>';
+      }
+      html += `<tr><td>${tr.id}</td><td>${range}</td><td>${brg}°</td><td>${gs}</td><td>${tr.hits}</td><td>${status}</td></tr>`;
+    });
+    body.innerHTML = html || '<tr><td colspan="6" style="color:var(--text-dim)">no tracks yet</td></tr>';
+  }
+
+  function formatTime(t){
+    const m = Math.floor(t/60), s=Math.floor(t%60);
+    return m+':'+String(s).padStart(2,'0');
+  }
+
+  document.getElementById('playBtn').addEventListener('click', (e)=>{
+    running = !running;
+    e.target.textContent = running ? '⏸ Pause' : '▶ Resume';
+  });
+  document.getElementById('resetBtn').addEventListener('click', ()=>{
+    resetScenario(parseInt(document.getElementById('acSel').value,10));
+  });
+  document.getElementById('acSel').addEventListener('change', (e)=>{
+    resetScenario(parseInt(e.target.value,10));
+  });
+  document.getElementById('speedSel').addEventListener('change', (e)=>{
+    speedMult = parseFloat(e.target.value);
+  });
+  document.getElementById('gateSlider').addEventListener('input', (e)=>{
+    gateBase = parseFloat(e.target.value);
+    document.getElementById('gateVal').textContent = gateBase+'nm';// gateBase.toFixed(1)+'nm';
+  });
+  document.getElementById('zoomInBtn').addEventListener('click', ()=> zoomAt(CX,CY,1.4));
+  document.getElementById('zoomOutBtn').addEventListener('click', ()=> zoomAt(CX,CY,1/1.4));
+  document.getElementById('viewResetBtn').addEventListener('click', resetView);
+
+  buildChannelTable();
+  buildAccuracyControls();
+  buildWeightControls();
+  resetScenario(parseInt(document.getElementById('acSel').value,10));
+
+  // ---------- LOOP ----------
+  let tableTimer=0;
+  function frame(ts){
+    if(lastTs===null) lastTs=ts;
+    let dt = (ts-lastTs)/1000;
+    lastTs = ts;
+    dt = Math.min(dt, 0.1);
+    if(running){
+      step(dt*speedMult);
+    }
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0,0,SIZE,SIZE);
+    ctx.clip();
+    drawScopeBackground();
+    drawSweeps();
+    drawAircraft();
+    drawPlots();
+    drawTracks();
+    ctx.restore();
+    // scope border
+    ctx.strokeStyle = getVar('--panel-border');
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1,1,SIZE-2,SIZE-2);
+
+    tableTimer += dt;
+    if(tableTimer>0.25){
+      tableTimer=0;
+      updateTrackTable();
+      document.getElementById('simTimeEl').textContent = formatTime(simTime);
+      document.getElementById('zoomVal').textContent = zoom.toFixed(1)+'×';
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
