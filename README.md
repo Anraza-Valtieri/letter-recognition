@@ -1,3 +1,0 @@
-MY FIRST PROJECT PAGE!
-
-Yeah right...
