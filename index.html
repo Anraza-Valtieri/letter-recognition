@@ -50,12 +50,18 @@
     text-align:center;
   }
   .wrap{
-    display:flex;
+    display:grid;
+    grid-template-columns: 1fr;
     gap:16px;
-    flex-wrap:wrap;
-    justify-content:center;
-    max-width:1140px;
     width:100%;
+    max-width:1300px;
+  }
+  @media (min-width:980px){
+    .wrap{
+      grid-template-columns: 280px minmax(380px,660px) 280px;
+      align-items:start;
+      justify-content:center;
+    }
   }
   .scope-box{
     position:relative;
@@ -64,7 +70,6 @@
     background:var(--scope-bg);
     padding:8px;
     width:100%;
-    max-width:640px;
     box-sizing:border-box;
   }
   canvas{
@@ -75,19 +80,12 @@
     aspect-ratio:1/1;
     touch-action:none;
   }
-  .sidebar{
-    width:300px;
+  .col{
+    width:100%;
     max-width:100%;
     display:flex;
     flex-direction:column;
     gap:10px;
-  }
-  @media (max-width:700px){
-    body{ padding:10px 6px 24px; }
-    h1{ font-size:13px; letter-spacing:2px; }
-    .wrap{ flex-direction:column; align-items:center; }
-    .scope-box{ max-width:480px; }
-    .sidebar{ width:100%; max-width:480px; }
   }
   .panel{
     border:1px solid var(--panel-border);
@@ -134,89 +132,86 @@
   .btnrow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;}
   .status-live{color:var(--green);}
   .status-acq{color:var(--amber);}
+  .panel-header-row{
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .collapse-btn{
+    background:none; border:1px solid var(--panel-border); color:var(--text-dim);
+    font-size:10px; padding:2px 7px; border-radius:4px; cursor:pointer;
+  }
+  .collapse-btn:hover{ color:var(--white); }
+  @media (max-width:700px){
+    body{ padding:10px 6px 24px; }
+    h1{ font-size:13px; letter-spacing:2px; }
+  }
 </style>
 </head>
 <body>
-<h1>Letters Recognition</h1>
-<div class="sub">Multi-Letters correlated into tracks</div>
+<h1>Radar Scope Simulator</h1>
+<div class="sub">Multi-sensor plots (A/B 2s · a/b 3s · 3/4 4s · 5 12s) correlated into tracks</div>
 <div class="wrap">
-  <div class="scope-box">
-    <canvas id="scope"></canvas>
-  </div>
-  <div class="sidebar">
+  <div class="col">
     <div class="panel">
-      <h2>Simulation</h2>
-      <div class="btnrow">
-        <button id="playBtn">⏸ Pause</button>
-        <button id="resetBtn">↺ New Scenario</button>
+      <div class="panel-header-row">
+        <h2 style="margin:0;">Simulator</h2>
+        <button id="toggleSimBtn" class="collapse-btn">▾ Hide</button>
       </div>
-      <div class="row">
-        <span>Aircraft</span>
-        <select id="acSel">
-          <option value="3">3</option>
-          <option value="4">4</option>
-          <option value="5" selected>5</option>
-          <option value="10">10</option>
-          <option value="20" >20</option>
-          <option value="50">50</option>
-          <option value="80">80</option>
-        </select>
+      <div id="simulatorBody">
+        <div class="btnrow" style="margin-top:8px;">
+          <button id="playBtn">⏸ Pause</button>
+          <button id="resetBtn">↺ New Scenario</button>
+        </div>
+        <div class="row">
+          <span>Aircraft</span>
+          <select id="acSel">
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5" selected>5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
+            <option value="10">10</option>
+            <option value="20">20</option>
+            <option value="50">50</option>
+          </select>
+        </div>
+        <div class="btnrow">
+          <button id="addAcBtn">＋ Add Aircraft</button>
+        </div>
+        <div class="row">
+          <span>Sim Speed</span>
+          <select id="speedSel">
+            <option value="0.5">0.5×</option>
+            <option value="1" selected>1×</option>
+            <option value="2">2×</option>
+            <option value="4">4×</option>
+            <option value="8">8×</option>
+          </select>
+        </div>
+        <div class="row"><span>Sim Time</span><span id="simTimeEl">0:00</span></div>
+        <div class="row"><span>Correlation gate</span><span id="gateVal">0.55nm</span></div>
+        <input type="range" id="gateSlider" min="0.30" max="4" step="0.05" value="0.55" style="width:100%;">
+
+        <div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--panel-border);">
+          <h2 style="margin-bottom:8px;">Display</h2>
+          <label class="toggle"><input type="checkbox" id="showAircraft" checked> Show aircraft (ground truth)</label>
+          <label class="toggle"><input type="checkbox" id="showPlots" checked> Show plots (raw returns)</label>
+          <label class="toggle"><input type="checkbox" id="showTracks" checked> Show tracks (correlated)</label>
+          <label class="toggle"><input type="checkbox" id="showVector" checked> Show velocity vectors</label>
+          <label class="toggle"><input type="checkbox" id="showAssoc" checked> Show plot→track association lines</label>
+          <label class="toggle"><input type="checkbox" id="showSweep"> Show sensor sweeps</label>
+        </div>
+
+        <div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--panel-border);">
+          <h2 style="margin-bottom:8px;">Sensor Accuracy</h2>
+          <div id="accuracyControls"></div>
+        </div>
+
+        <div style="margin-top:4px; padding-top:10px; border-top:1px solid var(--panel-border);">
+          <h2 style="margin-bottom:8px;">Sensor Weight (track trust)</h2>
+          <div id="weightControls"></div>
+        </div>
       </div>
-      <div class="btnrow">
-        <button id="addAcBtn">＋ Add Aircraft</button>
-      </div>
-      <div class="row">
-        <span>Sim Speed</span>
-        <select id="speedSel">
-          <option value="0.5">0.5×</option>
-          <option value="1" selected>1×</option>
-          <option value="2">2×</option>
-          <option value="4">4×</option>
-          <option value="8">8×</option>
-        </select>
-      </div>
-      <div class="row"><span>Sim Time</span><span id="simTimeEl">0:00</span></div>
-      <div class="row"><span>Correlation gate</span><span id="gateVal">0.55nm</span></div>
-      <input type="range" id="gateSlider" min="0.05" max="3" step="0.05" value="0.55" style="width:100%;">
-    </div>
-
-    <div class="panel">
-      <h2>Aircraft <span style="color:var(--text-dim); font-weight:normal; text-transform:none; letter-spacing:0;">(tap to edit)</span></h2>
-      <div id="aircraftList"></div>
-      <div id="aircraftEditor"></div>
-    </div>
-
-    <div class="panel">
-      <h2>Display</h2>
-      <label class="toggle"><input type="checkbox" id="showAircraft" checked> Show aircraft (ground truth)</label>
-      <label class="toggle"><input type="checkbox" id="showPlots" checked> Show plots (raw returns)</label>
-      <label class="toggle"><input type="checkbox" id="showTracks" checked> Show tracks (correlated)</label>
-      <label class="toggle"><input type="checkbox" id="showVector" checked> Show velocity vectors</label>
-      <label class="toggle"><input type="checkbox" id="showAssoc" checked> Show plot→track association lines</label>
-      <label class="toggle"><input type="checkbox" id="showSweep"> Show sensor sweeps</label>
-    </div>
-
-    <div class="panel">
-      <h2>Sensor Accuracy</h2>
-      <div id="accuracyControls"></div>
-    </div>
-
-    <div class="panel">
-      <h2>Sensor Weight (track trust)</h2>
-      <div id="weightControls"></div>
-    </div>
-
-    <div class="panel">
-      <h2>Sensor Channels</h2>
-      <table id="channelTable"></table>
-    </div>
-
-    <div class="panel">
-      <h2>Tracks</h2>
-      <table>
-        <thead><tr><th>ID</th><th>Rng</th><th>Brg</th><th>GS</th><th>Hits</th><th>Sta</th></tr></thead>
-        <tbody id="trackBody"></tbody>
-      </table>
     </div>
 
     <div class="panel">
@@ -228,6 +223,31 @@
       </div>
       <div class="row"><span>Zoom</span><span id="zoomVal">1.0×</span></div>
       <div class="legend-line">Scroll / pinch to zoom, click-drag or one-finger drag to pan.</div>
+    </div>
+
+    <div class="panel">
+      <h2>Sensor Channels</h2>
+      <table id="channelTable"></table>
+    </div>
+  </div>
+
+  <div class="scope-box">
+    <canvas id="scope"></canvas>
+  </div>
+
+  <div class="col">
+    <div class="panel">
+      <h2>Aircraft <span style="color:var(--text-dim); font-weight:normal; text-transform:none; letter-spacing:0;">(tap to edit)</span></h2>
+      <div id="aircraftList"></div>
+      <div id="aircraftEditor"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Tracks</h2>
+      <table>
+        <thead><tr><th>ID</th><th>Rng</th><th>Brg</th><th>GS</th><th>Hits</th><th>Sta</th></tr></thead>
+        <tbody id="trackBody"></tbody>
+      </table>
     </div>
 
     <div class="panel">
@@ -250,13 +270,13 @@
   // ---------- CONFIG ----------
   const MAX_RANGE = 50; // nm
   const CHANNELS = [
-    { id:'A', letters:['A'], period:2,  color:getVar('--green'),   accuracy:0.1, weight:1.0 },
-    { id:'B', letters:['B'], period:2,  color:getVar('--green'),   accuracy:0.1, weight:1.0 },
-    { id:'a', letters:['a'], period:3,  color:getVar('--cyan'),    accuracy:0.2, weight:0.9 },
-    { id:'b', letters:['b'], period:3,  color:getVar('--cyan'),    accuracy:0.2, weight:0.9 },
+    { id:'A', letters:['A'], period:2,  color:getVar('--green'),   accuracy:0.15, weight:1.0 },
+    { id:'B', letters:['B'], period:2,  color:getVar('--green'),   accuracy:0.15, weight:1.0 },
+    { id:'a', letters:['a'], period:3,  color:getVar('--cyan'),    accuracy:0.15, weight:1.0 },
+    { id:'b', letters:['b'], period:3,  color:getVar('--cyan'),    accuracy:0.15, weight:1.0 },
     { id:'3', letters:['3'], period:4,  color:getVar('--amber'),   accuracy:0.5, weight:0.8 },
     { id:'4', letters:['4'], period:4,  color:getVar('--amber'),   accuracy:0.5, weight:0.8 },
-    { id:'5', letters:['5'], period:12, color:getVar('--magenta'), accuracy:0.5, weight:0.8 }
+    { id:'5', letters:['5'], period:12, color:getVar('--magenta'), accuracy:0.5, weight:0.8 },
   ];
 
   const canvas = document.getElementById('scope');
@@ -412,7 +432,7 @@
   let gateBase = 0.55;    // nm, tunable via slider
   const GATE_GROWTH = 0.6;    // nm added per second since track's last update
   const GATE_MAX = 16;
-  const COAST_AFTER = 3;      // s since last hit -> mark COAST
+  const COAST_AFTER = 2;      // s since last hit -> mark COAST
   const DROP_AFTER = COAST_AFTER + 5; // coasting tracks removed 5s after they start coasting
   const FIT_WINDOW = 18;      // s of history used to fit a track's velocity (longer = smoother, slower to react)
   const FIT_MAX_POINTS = 12;  // cap on stored history points per track
@@ -439,7 +459,7 @@
 
   function makeNewAircraft(){
     const ac = { x:0,y:0, vx:0,vy:0, id: nextAircraftId++, hidden:false,
-                 detect: { A:true,B:true, a:true,b:true, '3':true, '4':true, '5':true } };
+                 detect: { A:true, a:true, B:true, b:true, '3':true, '4':true, '5':true } };
     spawnAircraft(ac);
     return ac;
   }
@@ -974,12 +994,19 @@
   });
   document.getElementById('gateSlider').addEventListener('input', (e)=>{
     gateBase = parseFloat(e.target.value);
-    document.getElementById('gateVal').textContent = gateBase+'nm';
+    document.getElementById('gateVal').textContent = gateBase.toFixed(1)+'nm';
   });
   document.getElementById('zoomInBtn').addEventListener('click', ()=> zoomAt(CX,CY,1.4));
   document.getElementById('zoomOutBtn').addEventListener('click', ()=> zoomAt(CX,CY,1/1.4));
   document.getElementById('viewResetBtn').addEventListener('click', resetView);
   document.getElementById('addAcBtn').addEventListener('click', addAircraft);
+  document.getElementById('toggleSimBtn').addEventListener('click', ()=>{
+    const body = document.getElementById('simulatorBody');
+    const btn = document.getElementById('toggleSimBtn');
+    const hidden = body.style.display === 'none';
+    body.style.display = hidden ? '' : 'none';
+    btn.textContent = hidden ? '▾ Hide' : '▸ Show';
+  });
 
   buildChannelTable();
   buildAccuracyControls();
