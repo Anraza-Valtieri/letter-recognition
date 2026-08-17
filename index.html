@@ -211,23 +211,23 @@
           <h2 style="margin-bottom:8px;">Sensor Weight (track trust)</h2>
           <div id="weightControls"></div>
         </div>
-      </div>
-    </div>
 
-    <div class="panel">
-      <h2>View</h2>
-      <div class="btnrow">
-        <button id="zoomInBtn">＋ Zoom In</button>
-        <button id="zoomOutBtn">－ Zoom Out</button>
-        <button id="viewResetBtn">⤢ Reset View</button>
-      </div>
-      <div class="row"><span>Zoom</span><span id="zoomVal">1.0×</span></div>
-      <div class="legend-line">Scroll / pinch to zoom, click-drag or one-finger drag to pan.</div>
-    </div>
+        <div style="margin-top:4px; padding-top:10px; border-top:1px solid var(--panel-border);">
+          <h2 style="margin-bottom:8px;">Sensor Update Speed</h2>
+          <div id="periodControls"></div>
+        </div>
 
-    <div class="panel">
-      <h2>Sensor Channels</h2>
-      <table id="channelTable"></table>
+        <div style="margin-top:4px; padding-top:10px; border-top:1px solid var(--panel-border);">
+          <h2 style="margin-bottom:8px;">View</h2>
+          <div class="btnrow">
+            <button id="zoomInBtn">＋ Zoom In</button>
+            <button id="zoomOutBtn">－ Zoom Out</button>
+            <button id="viewResetBtn">⤢ Reset View</button>
+          </div>
+          <div class="row"><span>Zoom</span><span id="zoomVal">1.0×</span></div>
+          <div class="legend-line">Scroll / pinch to zoom, click-drag or one-finger drag to pan.</div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -257,6 +257,8 @@
       <div class="legend-line">— line = 60s velocity projection · thin colored lines = plots just fused into that track</div>
       <div class="legend-line">TENT = 1 plot, no velocity yet · FIRM = 2+ plots · COAST = no recent hits, dropped after 5s coasting</div>
       <div class="legend-line">Track label solid underline = built from A/B/a/b only · dotted = from 3/4/5 only · no underline = mix of both</div>
+      <div class="legend-line">◇ pale-blue = chaff (slow-moving decoy, detected like an aircraft)</div>
+      <div class="legend-line">Dashed line = formation link between wingman and lead aircraft</div>
     </div>
   </div>
 </div>
@@ -420,6 +422,9 @@
 
   // ---------- STATE ----------
   let aircraft = [];   // hidden ground-truth movers (not directly rendered)
+  let chaff = [];       // slow-moving decoy objects, detected like aircraft
+  let nextChaffId = 1;
+  const CHAFF_LIFESPAN = 90; // s before a chaff cloud dissipates
   let plots = [];      // flat list of raw sensor returns for rendering
   let tracks = [];      // fused/correlated tracks
   let trackIdCounter = 1;
@@ -432,7 +437,7 @@
   let gateBase = 0.55;    // nm, tunable via slider
   const GATE_GROWTH = 0.6;    // nm added per second since track's last update
   const GATE_MAX = 16;
-  const COAST_AFTER = 2;      // s since last hit -> mark COAST
+  const COAST_AFTER = 4;      // s since last hit -> mark COAST
   const DROP_AFTER = COAST_AFTER + 5; // coasting tracks removed 5s after they start coasting
   const FIT_WINDOW = 18;      // s of history used to fit a track's velocity (longer = smoother, slower to react)
   const FIT_MAX_POINTS = 12;  // cap on stored history points per track
@@ -476,6 +481,47 @@
     buildAircraftList();
   }
 
+  function dropChaff(ac){
+    const speedKt = rand(4,12); // very slow drift
+    const spdNmS = speedKt/3600;
+    const hRad = ac.heading*Math.PI/180;
+    chaff.push({
+      id: nextChaffId++,
+      x: ac.x, y: ac.y,
+      vx: spdNmS*Math.sin(hRad), vy: spdNmS*Math.cos(hRad),
+      heading: ac.heading,
+      droppedAt: simTime,
+      detect: { A:true, B:true, a:true, b:true, '3':true, '4':true, '5':true }
+    });
+  }
+
+  // ---------- FORMATIONS (echelon) ----------
+  let formations = []; // { id, leaderId, memberIds:[...], spacing }
+  let nextFormationId = 1;
+
+  function getFormationOf(aircraftId){
+    return formations.find(f => f.leaderId===aircraftId || f.memberIds.includes(aircraftId));
+  }
+  function getFormationFollowerInfo(aircraftId){
+    const f = formations.find(fm => fm.memberIds.includes(aircraftId));
+    if(!f) return null;
+    const leader = aircraft.find(a => a.id===f.leaderId);
+    if(!leader) return null;
+    return { formation:f, leader, spacing:f.spacing, idx: f.memberIds.indexOf(aircraftId)+1 };
+  }
+  function removeAircraftFromFormations(aircraftId){
+    formations = formations.filter(f => f.leaderId !== aircraftId); // dissolve if it was the lead
+    formations.forEach(f => { f.memberIds = f.memberIds.filter(m => m!==aircraftId); });
+  }
+  function breakFormation(formationId){
+    formations = formations.filter(f => f.id !== formationId);
+  }
+  function formEchelon(leaderId, followerIds, spacing){
+    removeAircraftFromFormations(leaderId);
+    followerIds.forEach(id => removeAircraftFromFormations(id));
+    formations.push({ id: nextFormationId++, leaderId, memberIds: followerIds.slice(), spacing });
+  }
+
   CHANNELS.forEach(ch=>{
     ch.sweepAngle = 0;
     ch.prevSweepAngle = 0;
@@ -486,6 +532,10 @@
     simTime = 0;
     plots = [];
     tracks = [];
+    chaff = [];
+    formations = [];
+    nextChaffId = 1;
+    nextFormationId = 1;
     trackIdCounter = 1;
     nextAircraftId = 1;
     selectedAircraftId = null;
@@ -572,34 +622,64 @@
   function step(dt){
     simTime += dt;
     aircraft.forEach(ac=>{
-      // gentle autonomous turning: periodically pick a new turn rate
-      // (often zero = straight, sometimes a left or right turn) unless the
-      // aircraft's turn rate has been set manually via the editor panel
-      if(!ac.manualTurn){
-        ac.turnTimer -= dt;
-        if(ac.turnTimer <= 0){
-          ac.turnTimer = rand(4,12);
-          const r = Math.random();
-          ac.turnRate = r < 0.4 ? 0 : rand(-9,9); // deg/s
+      const followInfo = getFormationFollowerInfo(ac.id);
+      if(followInfo){
+        // formation flight: match leader's heading/speed and hold an echelon
+        // slot (behind and to the side), easing into position rather than
+        // snapping, so joining a formation looks like maneuvering into place
+        const { leader, spacing, idx } = followInfo;
+        ac.heading = leader.heading;
+        ac.speedKt = leader.speedKt;
+        ac.turnRate = leader.turnRate;
+        ac.manualTurn = true;
+        const hRad = leader.heading*Math.PI/180;
+        const fwdX = Math.sin(hRad), fwdY = Math.cos(hRad);
+        const rightX = Math.cos(hRad), rightY = -Math.sin(hRad);
+        const offsetAlong = -idx*spacing;  // behind the leader
+        const offsetAcross = idx*spacing;  // staggered to the right (echelon)
+        const targetX = leader.x + fwdX*offsetAlong + rightX*offsetAcross;
+        const targetY = leader.y + fwdY*offsetAlong + rightY*offsetAcross;
+        const lerp = Math.min(1, dt*3);
+        ac.x += (targetX-ac.x)*lerp;
+        ac.y += (targetY-ac.y)*lerp;
+        ac.vx = leader.vx; ac.vy = leader.vy;
+      } else {
+        // gentle autonomous turning: periodically pick a new turn rate
+        // (often zero = straight, sometimes a left or right turn) unless the
+        // aircraft's turn rate has been set manually via the editor panel
+        if(!ac.manualTurn){
+          ac.turnTimer -= dt;
+          if(ac.turnTimer <= 0){
+            ac.turnTimer = rand(4,12);
+            const r = Math.random();
+            ac.turnRate = r < 0.4 ? 0 : rand(-9,9); // deg/s
+          }
         }
+        ac.heading = normalize360(ac.heading + ac.turnRate*dt);
+        const hRad = ac.heading*Math.PI/180;
+        const spdNmS = ac.speedKt/3600;
+        ac.vx = spdNmS*Math.sin(hRad);
+        ac.vy = spdNmS*Math.cos(hRad);
+        ac.x += ac.vx*dt;
+        ac.y += ac.vy*dt;
       }
-      ac.heading = normalize360(ac.heading + ac.turnRate*dt);
-      const hRad = ac.heading*Math.PI/180;
-      const spdNmS = ac.speedKt/3600;
-      ac.vx = spdNmS*Math.sin(hRad);
-      ac.vy = spdNmS*Math.cos(hRad);
-      ac.x += ac.vx*dt;
-      ac.y += ac.vy*dt;
       const range = Math.hypot(ac.x,ac.y);
-      if(range > MAX_RANGE*1.08){ spawnAircraft(ac); }
+      if(range > MAX_RANGE*1.08){ removeAircraftFromFormations(ac.id); spawnAircraft(ac); }
     });
+
+    // chaff: drifts in a straight line at the heading it was dropped on, no turning
+    chaff.forEach(c=>{
+      c.x += c.vx*dt;
+      c.y += c.vy*dt;
+    });
+    chaff = chaff.filter(c => (simTime - c.droppedAt) < CHAFF_LIFESPAN && Math.hypot(c.x,c.y) < MAX_RANGE*1.2);
 
     CHANNELS.forEach(ch=>{
       ch.prevSweepAngle = ch.sweepAngle;
       ch.sweepAngle = normalize360( (simTime/ch.period) * 360 );
     });
 
-    aircraft.forEach(ac=>{
+    aircraft.concat(chaff).forEach(ac=>{
       const bearing = normalize360( Math.atan2(ac.x,ac.y)*180/Math.PI );
       CHANNELS.forEach(ch=>{
         if(!ac.detect[ch.id]) return; // this sensor type can't see this aircraft
@@ -716,6 +796,43 @@
     });
   }
 
+  function drawChaff(){
+    if(!document.getElementById('showAircraft').checked) return;
+    if(chaff.length===0) return;
+    ctx.font = '9px monospace';
+    chaff.forEach(c=>{
+      const [x,y] = worldToPx(c.x,c.y);
+      ctx.strokeStyle = hexA(getVar('--truth'), 0.85);
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(x,y-6); ctx.lineTo(x+6,y); ctx.lineTo(x,y+6); ctx.lineTo(x-6,y);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.fillStyle = hexA(getVar('--truth'), 0.7);
+      ctx.fillText('chaff', x+9, y+3);
+    });
+  }
+
+  function drawFormationLines(){
+    if(!document.getElementById('showAircraft').checked) return;
+    if(formations.length===0) return;
+    ctx.strokeStyle = hexA(getVar('--truth'), 0.5);
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3,3]);
+    formations.forEach(f=>{
+      const leader = aircraft.find(a=>a.id===f.leaderId);
+      if(!leader || leader.hidden) return;
+      const [lx,ly] = worldToPx(leader.x,leader.y);
+      f.memberIds.forEach(id=>{
+        const m = aircraft.find(a=>a.id===id);
+        if(!m || m.hidden) return;
+        const [mx,my] = worldToPx(m.x,m.y);
+        ctx.beginPath(); ctx.moveTo(lx,ly); ctx.lineTo(mx,my); ctx.stroke();
+      });
+    });
+    ctx.setLineDash([]);
+  }
+
   function drawPlots(){
     const showPlots = document.getElementById('showPlots').checked;
     if(!showPlots) return;
@@ -826,7 +943,10 @@
     let html = '';
     aircraft.forEach(ac=>{
       const sel = ac.id===selectedAircraftId ? 'style="color:var(--amber);border-color:var(--amber);"' : '';
-      html += `<div class="ac-row" data-id="${ac.id}" ${sel}>AC${ac.id} · ${Math.round(ac.heading)}° · ${Math.round(ac.speedKt)}kt${ac.hidden?' · hidden':''}</div>`;
+      const isLead = formations.some(f=>f.leaderId===ac.id);
+      const isWing = formations.some(f=>f.memberIds.includes(ac.id));
+      const formTag = isLead ? ' · LEAD' : (isWing ? ' · WING' : '');
+      html += `<div class="ac-row" data-id="${ac.id}" ${sel}>AC${ac.id} · ${Math.round(ac.heading)}° · ${Math.round(ac.speedKt)}kt${ac.hidden?' · hidden':''}${formTag}</div>`;
     });
     container.innerHTML = html;
     container.querySelectorAll('.ac-row').forEach(row=>{
@@ -842,6 +962,29 @@
     const container = document.getElementById('aircraftEditor');
     const ac = aircraft.find(a=>a.id===selectedAircraftId);
     if(!ac){ container.innerHTML=''; return; }
+
+    const activeForm = getFormationOf(ac.id);
+    let formationHtml;
+    if(activeForm){
+      const isLead = activeForm.leaderId===ac.id;
+      const otherIds = [activeForm.leaderId, ...activeForm.memberIds].filter(id=>id!==ac.id);
+      formationHtml = `
+        <div class="row"><span>Role</span><span>${isLead?'Lead':'Wing'}</span></div>
+        <div class="legend-line">With: AC${otherIds.join(', AC')}</div>
+        <div class="row"><span>Spacing</span><span id="formSpacingVal">${activeForm.spacing.toFixed(2)}nm</span></div>
+        <input type="range" id="formSpacingSlider" min="0.1" max="3" step="0.05" value="${activeForm.spacing}" style="width:100%;margin-bottom:6px;">
+        <div class="btnrow"><button id="breakFormBtn">🔻 Break Formation</button></div>`;
+    } else {
+      const others = aircraft.filter(a=>a.id!==ac.id);
+      formationHtml = others.length===0
+        ? '<div class="legend-line">No other aircraft to form up with.</div>'
+        : `
+        ${others.map(o=>`<label class="toggle"><input type="checkbox" class="formMemberCb" data-id="${o.id}"> AC${o.id}</label>`).join('')}
+        <div class="row" style="margin-top:6px;"><span>Spacing</span><span id="formSpacingNewVal">0.50nm</span></div>
+        <input type="range" id="formSpacingNewSlider" min="0.1" max="3" step="0.05" value="0.5" style="width:100%;margin-bottom:6px;">
+        <div class="btnrow"><button id="formEchelonBtn">▚ Form Echelon (as Lead)</button></div>`;
+    }
+
     container.innerHTML = `
       <div class="row" style="margin-top:8px;"><strong>AC${ac.id} settings</strong><button id="closeEditorBtn">✕</button></div>
       <div class="row"><span>Speed</span><span id="acSpeedVal">${Math.round(ac.speedKt)}kt</span></div>
@@ -853,7 +996,10 @@
       <label class="toggle"><input type="checkbox" id="acAutoTurn" ${ac.manualTurn?'':'checked'}> Auto-turn (random maneuvers)</label>
       <div class="legend-line" style="margin:8px 0 4px;">Detected by:</div>
       ${CHANNELS.map(ch=>`<label class="toggle"><input type="checkbox" class="acDetectCb" data-ch="${ch.id}" ${ac.detect[ch.id]?'checked':''}><span class="swatch" style="background:${ch.color}"></span>${ch.letters.join('/')}</label>`).join('')}
+      <div class="legend-line" style="margin:8px 0 4px;">Formation (echelon):</div>
+      ${formationHtml}
       <div class="btnrow" style="margin-top:10px;">
+        <button id="acChaffBtn">💨 Drop Chaff</button>
         <button id="acHideBtn">${ac.hidden?'👁 Show':'🚫 Hide'}</button>
         <button id="acDeleteBtn">🗑 Delete</button>
       </div>`;
@@ -877,11 +1023,15 @@
     container.querySelectorAll('.acDetectCb').forEach(cb=>{
       cb.addEventListener('change', e=>{ ac.detect[e.target.dataset.ch] = e.target.checked; });
     });
+    document.getElementById('acChaffBtn').addEventListener('click', ()=>{
+      dropChaff(ac);
+    });
     document.getElementById('acHideBtn').addEventListener('click', ()=>{
       ac.hidden = !ac.hidden;
       renderAircraftEditor(); buildAircraftList();
     });
     document.getElementById('acDeleteBtn').addEventListener('click', ()=>{
+      removeAircraftFromFormations(ac.id);
       aircraft = aircraft.filter(a=>a.id!==ac.id);
       selectedAircraftId = null;
       renderAircraftEditor(); buildAircraftList();
@@ -891,16 +1041,28 @@
       renderAircraftEditor();
       buildAircraftList();
     });
-  }
 
-  function buildChannelTable(){
-    const tbl = document.getElementById('channelTable');
-    let html = '<thead><tr><th></th><th>Letters</th><th>Period</th><th>Acc</th><th>Wt</th></tr></thead><tbody>';
-    CHANNELS.forEach(ch=>{
-      html += `<tr><td><span class="swatch" style="background:${ch.color}"></span></td><td>${ch.letters.join(', ')}</td><td>${ch.period}s</td><td>±${ch.accuracy.toFixed(2)}nm</td><td>${ch.weight.toFixed(2)}×</td></tr>`;
-    });
-    html += '</tbody>';
-    tbl.innerHTML = html;
+    if(activeForm){
+      document.getElementById('formSpacingSlider').addEventListener('input', e=>{
+        activeForm.spacing = parseFloat(e.target.value);
+        document.getElementById('formSpacingVal').textContent = activeForm.spacing.toFixed(2)+'nm';
+      });
+      document.getElementById('breakFormBtn').addEventListener('click', ()=>{
+        breakFormation(activeForm.id);
+        renderAircraftEditor(); buildAircraftList();
+      });
+    } else if(document.getElementById('formEchelonBtn')){
+      document.getElementById('formSpacingNewSlider').addEventListener('input', e=>{
+        document.getElementById('formSpacingNewVal').textContent = parseFloat(e.target.value).toFixed(2)+'nm';
+      });
+      document.getElementById('formEchelonBtn').addEventListener('click', ()=>{
+        const ids = Array.from(container.querySelectorAll('.formMemberCb:checked')).map(cb=>parseInt(cb.dataset.id,10));
+        if(ids.length===0) return;
+        const spacing = parseFloat(document.getElementById('formSpacingNewSlider').value);
+        formEchelon(ac.id, ids, spacing);
+        renderAircraftEditor(); buildAircraftList();
+      });
+    }
   }
 
   function buildAccuracyControls(){
@@ -920,7 +1082,6 @@
       slider.addEventListener('input', (e)=>{
         ch.accuracy = parseFloat(e.target.value);
         document.getElementById(`acc-${ch.id}-val`).textContent = '±'+ch.accuracy.toFixed(2)+'nm';
-        buildChannelTable();
       });
       container.appendChild(slider);
     });
@@ -943,7 +1104,28 @@
       slider.addEventListener('input', (e)=>{
         ch.weight = parseFloat(e.target.value);
         document.getElementById(`wt-${ch.id}-val`).textContent = ch.weight.toFixed(2)+'×';
-        buildChannelTable();
+      });
+      container.appendChild(slider);
+    });
+  }
+
+  function buildPeriodControls(){
+    const container = document.getElementById('periodControls');
+    container.innerHTML = '';
+    CHANNELS.forEach(ch=>{
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = `<span><span class="swatch" style="background:${ch.color}"></span>${ch.letters.join('/')}</span><span id="per-${ch.id}-val">${ch.period.toFixed(1)}s</span>`;
+      container.appendChild(row);
+      const slider = document.createElement('input');
+      slider.type = 'range';
+      slider.min = '1'; slider.max = '12'; slider.step = '0.5';
+      slider.value = ch.period;
+      slider.style.width = '100%';
+      slider.style.marginBottom = '8px';
+      slider.addEventListener('input', (e)=>{
+        ch.period = parseFloat(e.target.value);
+        document.getElementById(`per-${ch.id}-val`).textContent = ch.period.toFixed(1)+'s';
       });
       container.appendChild(slider);
     });
@@ -1008,9 +1190,9 @@
     btn.textContent = hidden ? '▾ Hide' : '▸ Show';
   });
 
-  buildChannelTable();
   buildAccuracyControls();
   buildWeightControls();
+  buildPeriodControls();
   resetScenario(parseInt(document.getElementById('acSel').value,10));
   buildAircraftList();
 
@@ -1030,7 +1212,9 @@
     ctx.clip();
     drawScopeBackground();
     drawSweeps();
+    drawFormationLines();
     drawAircraft();
+    drawChaff();
     drawPlots();
     drawTracks();
     ctx.restore();
