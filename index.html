@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Radar Scope Simulator</title>
+<title>Letter Simulator</title>
 <style>
   :root{
     --bg:#04070a;
@@ -147,8 +147,8 @@
 </style>
 </head>
 <body>
-<h1>Radar Scope Simulator</h1>
-<div class="sub">Multi-sensor plots (A/B 2s · a/b 3s · 3/4 4s · 5 12s) correlated into tracks</div>
+<h1>Letter Simulator</h1>
+<div class="sub">Multi-Letters (A/B 2s · a/b 3s · 3/4 4s · 5 12s) correlated into tracks</div>
 <div class="wrap">
   <div class="col">
     <div class="panel">
@@ -194,11 +194,11 @@
 
         <div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--panel-border);">
           <h2 style="margin-bottom:8px;">Display</h2>
-          <label class="toggle"><input type="checkbox" id="showAircraft" checked> Show aircraft (ground truth)</label>
-          <label class="toggle"><input type="checkbox" id="showPlots" checked> Show plots (raw returns)</label>
+          <label class="toggle"><input type="checkbox" id="showAircraft" checked> Show Aircraft (ground truth)</label>
+          <label class="toggle"><input type="checkbox" id="showPlots" checked> Show Letters (raw returns)</label>
           <label class="toggle"><input type="checkbox" id="showTracks" checked> Show tracks (correlated)</label>
           <label class="toggle"><input type="checkbox" id="showVector" checked> Show velocity vectors</label>
-          <label class="toggle"><input type="checkbox" id="showAssoc" checked> Show plot→track association lines</label>
+          <label class="toggle"><input type="checkbox" id="showAssoc" checked> Show Letter→track association lines</label>
           <label class="toggle"><input type="checkbox" id="showSweep"> Show sensor sweeps</label>
         </div>
 
@@ -252,10 +252,10 @@
 
     <div class="panel">
       <div class="legend-line">△ pale = actual aircraft position (ground truth) — click/tap to edit</div>
-      <div class="legend-line">○ letter = raw plot; the letter only IDs the sensor channel, not the aircraft</div>
-      <div class="legend-line">□ white = fused track, built by matching plots to a coasted position</div>
-      <div class="legend-line">— line = 60s velocity projection · thin colored lines = plots just fused into that track</div>
-      <div class="legend-line">TENT = 1 plot, no velocity yet · FIRM = 2+ plots · COAST = no recent hits, dropped after 5s coasting</div>
+      <div class="legend-line">○ letter = raw letters; the letter only IDs the sensor channel, not the aircraft</div>
+      <div class="legend-line">□ white = fused track, built by matching letter to a coasted position</div>
+      <div class="legend-line">— line = 60s velocity projection · thin colored lines = letter just fused into that track</div>
+      <div class="legend-line">TENT = 1 letters, no velocity yet · FIRM = 2+ Letters · COAST = no recent hits, dropped after 5s coasting</div>
       <div class="legend-line">Track label solid underline = built from A/B/a/b only · dotted = from 3/4/5 only · no underline = mix of both</div>
       <div class="legend-line">◇ pale-blue = chaff (slow-moving decoy, detected like an aircraft)</div>
       <div class="legend-line">Dashed line = formation link between wingman and lead aircraft</div>
@@ -719,9 +719,9 @@
 
   function drawScopeBackground(){
     ctx.clearRect(0,0,SIZE,SIZE);
-    const [ox,oy] = worldToPx(0,0); // screen position of the radar site
+    const [ox,oy] = worldToPx(0,0); // screen position of the Letter site
 
-    // radar site marker
+    // Letter site marker
     ctx.strokeStyle = getVar('--text-dim');
     ctx.lineWidth = 1.2;
     ctx.beginPath(); ctx.moveTo(ox-6,oy); ctx.lineTo(ox+6,oy); ctx.stroke();
