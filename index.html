@@ -1176,7 +1176,7 @@
   });
   document.getElementById('gateSlider').addEventListener('input', (e)=>{
     gateBase = parseFloat(e.target.value);
-    document.getElementById('gateVal').textContent = gateBase.toFixed(1)+'nm';
+    document.getElementById('gateVal').textContent = gateBase+'nm';
   });
   document.getElementById('zoomInBtn').addEventListener('click', ()=> zoomAt(CX,CY,1.4));
   document.getElementById('zoomOutBtn').addEventListener('click', ()=> zoomAt(CX,CY,1/1.4));
