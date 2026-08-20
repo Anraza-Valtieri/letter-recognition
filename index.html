@@ -435,8 +435,8 @@
   let speedMult = 1;
   let lastTs = null;
   let gateBase = 0.55;    // nm, tunable via slider
-  const GATE_GROWTH = 0.6;    // nm added per second since track's last update
-  const GATE_MAX = 16;
+  const GATE_GROWTH = 0.1;    // nm added per second since track's last update 0.6
+  const GATE_MAX = 1; // nm max 16
   const COAST_AFTER = 4;      // s since last hit -> mark COAST
   const DROP_AFTER = COAST_AFTER + 5; // coasting tracks removed 5s after they start coasting
   const FIT_WINDOW = 18;      // s of history used to fit a track's velocity (longer = smoother, slower to react)
